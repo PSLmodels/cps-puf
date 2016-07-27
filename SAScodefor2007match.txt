@@ -1,0 +1,3636 @@
+/* ----------------------------------------
+Code exported from SAS Enterprise Guide
+DATE: Friday, July 22, 2016     TIME: 4:22:26 PM
+PROJECT: Project 5
+PROJECT PATH: C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp
+---------------------------------------- */
+
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+/* Unable to determine code to assign library EXTRACT on Local */
+
+
+/* Conditionally delete set of tables or views, if they exists          */
+/* If the member does not exist, then no action is performed   */
+%macro _eg_conditional_dropds /parmbuff;
+   	%let num=1;
+	/* flags to determine whether a PROC SQL step is needed */
+	/* or even started yet                                  */
+	%let stepneeded=0;
+	%let stepstarted=0;
+   	%let dsname=%scan(&syspbuff,&num,',()');
+	%do %while(&dsname ne);	
+		%if %sysfunc(exist(&dsname)) %then %do;
+			%let stepneeded=1;
+			%if (&stepstarted eq 0) %then %do;
+				proc sql;
+				%let stepstarted=1;
+			%end;
+				drop table &dsname;
+		%end;
+		%if %sysfunc(exist(&dsname,view)) %then %do;
+			%let stepneeded=1;
+			%if (&stepstarted eq 0) %then %do;
+				proc sql;
+				%let stepstarted=1;
+			%end;
+				drop view &dsname;
+		%end;
+		%let num=%eval(&num+1);
+      	%let dsname=%scan(&syspbuff,&num,',()');
+	%end;
+	%if &stepstarted %then %do;
+		quit;
+	%end;
+%mend _eg_conditional_dropds;
+
+
+/* Build where clauses from stored process parameters */
+
+%macro _eg_WhereParam( COLUMN, PARM, OPERATOR, TYPE=S, MATCHALL=_ALL_VALUES_, MATCHALL_CLAUSE=1, MAX= , IS_EXPLICIT=0);
+  %local q1 q2 sq1 sq2;
+  %local isEmpty;
+  %local isEqual;
+  %let isEqual = ("%QUPCASE(&OPERATOR)" = "EQ" OR "&OPERATOR" = "=");
+  %let isNotEqual = ("%QUPCASE(&OPERATOR)" = "NE" OR "&OPERATOR" = "<>");
+  %let isIn = ("%QUPCASE(&OPERATOR)" = "IN");
+  %let isNotIn = ("%QUPCASE(&OPERATOR)" = "NOT IN");
+  %local isString;
+  %let isString = (%QUPCASE(&TYPE) eq S or %QUPCASE(&TYPE) eq STRING );
+  %if &isString %then
+  %do;
+    %let q1=%str(%");
+    %let q2=%str(%");
+	%let sq1=%str(%'); 
+    %let sq2=%str(%'); 
+  %end;
+  %else %if %QUPCASE(&TYPE) eq D or %QUPCASE(&TYPE) eq DATE %then 
+  %do;
+    %let q1=%str(%");
+    %let q2=%str(%"d);
+	%let sq1=%str(%'); 
+    %let sq2=%str(%'); 
+  %end;
+  %else %if %QUPCASE(&TYPE) eq T or %QUPCASE(&TYPE) eq TIME %then
+  %do;
+    %let q1=%str(%");
+    %let q2=%str(%"t);
+	%let sq1=%str(%'); 
+    %let sq2=%str(%'); 
+  %end;
+  %else %if %QUPCASE(&TYPE) eq DT or %QUPCASE(&TYPE) eq DATETIME %then
+  %do;
+    %let q1=%str(%");
+    %let q2=%str(%"dt);
+	%let sq1=%str(%'); 
+    %let sq2=%str(%'); 
+  %end;
+  %else
+  %do;
+    %let q1=;
+    %let q2=;
+	%let sq1=;
+    %let sq2=;
+  %end;
+  
+  %if "&PARM" = "" %then %let PARM=&COLUMN;
+
+  %local isBetween;
+  %let isBetween = ("%QUPCASE(&OPERATOR)"="BETWEEN" or "%QUPCASE(&OPERATOR)"="NOT BETWEEN");
+
+  %if "&MAX" = "" %then %do;
+    %let MAX = &parm._MAX;
+    %if &isBetween %then %let PARM = &parm._MIN;
+  %end;
+
+  %if not %symexist(&PARM) or (&isBetween and not %symexist(&MAX)) %then %do;
+    %if &IS_EXPLICIT=0 %then %do;
+		not &MATCHALL_CLAUSE
+	%end;
+	%else %do;
+	    not 1=1
+	%end;
+  %end;
+  %else %if "%qupcase(&&&PARM)" = "%qupcase(&MATCHALL)" %then %do;
+    %if &IS_EXPLICIT=0 %then %do;
+	    &MATCHALL_CLAUSE
+	%end;
+	%else %do;
+	    1=1
+	%end;	
+  %end;
+  %else %if (not %symexist(&PARM._count)) or &isBetween %then %do;
+    %let isEmpty = ("&&&PARM" = "");
+    %if (&isEqual AND &isEmpty AND &isString) %then
+       &COLUMN is null;
+    %else %if (&isNotEqual AND &isEmpty AND &isString) %then
+       &COLUMN is not null;
+    %else %do;
+	   %if &IS_EXPLICIT=0 %then %do;
+           &COLUMN &OPERATOR %unquote(&q1)&&&PARM%unquote(&q2)
+	   %end;
+	   %else %do;
+	       &COLUMN &OPERATOR %unquote(%nrstr(&sq1))&&&PARM%unquote(%nrstr(&sq2))
+	   %end;
+       %if &isBetween %then 
+          AND %unquote(&q1)&&&MAX%unquote(&q2);
+    %end;
+  %end;
+  %else 
+  %do;
+	%local emptyList;
+  	%let emptyList = %symexist(&PARM._count);
+  	%if &emptyList %then %let emptyList = &&&PARM._count = 0;
+	%if (&emptyList) %then
+	%do;
+		%if (&isNotin) %then
+		   1;
+		%else
+			0;
+	%end;
+	%else %if (&&&PARM._count = 1) %then 
+    %do;
+      %let isEmpty = ("&&&PARM" = "");
+      %if (&isIn AND &isEmpty AND &isString) %then
+        &COLUMN is null;
+      %else %if (&isNotin AND &isEmpty AND &isString) %then
+        &COLUMN is not null;
+      %else %do;
+	    %if &IS_EXPLICIT=0 %then %do;
+            &COLUMN &OPERATOR (%unquote(&q1)&&&PARM%unquote(&q2))
+	    %end;
+		%else %do;
+		    &COLUMN &OPERATOR (%unquote(%nrstr(&sq1))&&&PARM%unquote(%nrstr(&sq2)))
+		%end;
+	  %end;
+    %end;
+    %else 
+    %do;
+       %local addIsNull addIsNotNull addComma;
+       %let addIsNull = %eval(0);
+       %let addIsNotNull = %eval(0);
+       %let addComma = %eval(0);
+       (&COLUMN &OPERATOR ( 
+       %do i=1 %to &&&PARM._count; 
+          %let isEmpty = ("&&&PARM&i" = "");
+          %if (&isString AND &isEmpty AND (&isIn OR &isNotIn)) %then
+          %do;
+             %if (&isIn) %then %let addIsNull = 1;
+             %else %let addIsNotNull = 1;
+          %end;
+          %else
+          %do;		     
+            %if &addComma %then %do;,%end;
+			%if &IS_EXPLICIT=0 %then %do;
+                %unquote(&q1)&&&PARM&i%unquote(&q2) 
+			%end;
+			%else %do;
+			    %unquote(%nrstr(&sq1))&&&PARM&i%unquote(%nrstr(&sq2)) 
+			%end;
+            %let addComma = %eval(1);
+          %end;
+       %end;) 
+       %if &addIsNull %then OR &COLUMN is null;
+       %else %if &addIsNotNull %then AND &COLUMN is not null;
+       %do;)
+       %end;
+    %end;
+  %end;
+%mend;
+
+/* ---------------------------------- */
+/* MACRO: enterpriseguide             */
+/* PURPOSE: define a macro variable   */
+/*   that contains the file system    */
+/*   path of the WORK library on the  */
+/*   server.  Note that different     */
+/*   logic is needed depending on the */
+/*   server type.                     */
+/* ---------------------------------- */
+%macro enterpriseguide;
+%global sasworklocation;
+%if &sysscp=OS %then %do; /* MVS Server */
+	%if %sysfunc(getoption(filesystem))=MVS %then %do;
+        /* By default, physical file name will be considered a classic MVS data set. */
+	    /* Construct dsn that will be unique for each concurrent session under a particular account: */
+		filename egtemp '&egtemp' disp=(new,delete); /* create a temporary data set */
+ 		%let tempdsn=%sysfunc(pathname(egtemp)); /* get dsn */
+		filename egtemp clear; /* get rid of data set - we only wanted its name */
+		%let unique_dsn=".EGTEMP.%substr(&tempdsn, 1, 16).PDSE"; 
+		filename egtmpdir &unique_dsn
+			disp=(new,delete,delete) space=(cyl,(5,5,50))
+			dsorg=po dsntype=library recfm=vb
+			lrecl=8000 blksize=8004 ;
+		options fileext=ignore ;
+	%end; 
+ 	%else %do; 
+        /* 
+		By default, physical file name will be considered an HFS 
+		(hierarchical file system) file. 
+		*/
+		%if "%sysfunc(getoption(filetempdir))"="" %then %do;
+			filename egtmpdir '/tmp';
+		%end;
+		%else %do;
+			filename egtmpdir "%sysfunc(getoption(filetempdir))";
+		%end;
+	%end; 
+	%let path=%sysfunc(pathname(egtmpdir));
+        %let sasworklocation=%sysfunc(quote(&path));  
+%end; /* MVS Server */
+%else %do;
+	%let sasworklocation = "%sysfunc(getoption(work))/";
+%end;
+%if &sysscp=VMS_AXP %then %do; /* Alpha VMS server */
+	%let sasworklocation = "%sysfunc(getoption(work))";                         
+%end;
+%if &sysscp=CMS %then %do; 
+	%let path = %sysfunc(getoption(work));                         
+	%let sasworklocation = "%substr(&path, %index(&path,%str( )))";
+%end;
+%mend enterpriseguide;
+
+%enterpriseguide
+
+/* save the current settings of XPIXELS and YPIXELS */
+/* so that they can be restored later               */
+%macro _sas_pushchartsize(new_xsize, new_ysize);
+	%global _savedxpixels _savedypixels;
+	options nonotes;
+	proc sql noprint;
+	select setting into :_savedxpixels
+	from sashelp.vgopt
+	where optname eq "XPIXELS";
+	select setting into :_savedypixels
+	from sashelp.vgopt
+	where optname eq "YPIXELS";
+	quit;
+	options notes;
+	GOPTIONS XPIXELS=&new_xsize YPIXELS=&new_ysize;
+%mend;
+
+/* restore the previous values for XPIXELS and YPIXELS */
+%macro _sas_popchartsize;
+	%if %symexist(_savedxpixels) %then %do;
+		GOPTIONS XPIXELS=&_savedxpixels YPIXELS=&_savedypixels;
+		%symdel _savedxpixels / nowarn;
+		%symdel _savedypixels / nowarn;
+	%end;
+%mend;
+
+ODS PROCTITLE;
+OPTIONS DEV=ACTIVEX;
+GOPTIONS XPIXELS=0 YPIXELS=0;
+FILENAME EGSRX TEMP;
+ODS tagsets.sasreport13(ID=EGSRX) FILE=EGSRX STYLE=HtmlBlue STYLESHEET=(URL="file:///C:/Program%20Files/SASHome/SASEnterpriseGuide/5.1/Styles/HtmlBlue.css") NOGTITLE NOGFOOTNOTE GPATH=&sasworklocation ENCODING=UTF8 options(rolap="on");
+
+/*   START OF NODE: 0. Assign libname and filename paths.   */
+%LET _CLIENTTASKLABEL='0. Assign libname and filename paths.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+* Used in Stages 1-7;
+libname EXTRACT 'C:\Users\jhall\Desktop\OSPC\NovemberMatch\Extracts\'; /* JBH */
+
+* Used in stage 1;
+filename CPSDATA  'C:\Users\jhall\Desktop\CPS Data\asec2008_pubuse.dat' ; /* JBH */
+
+* Used in Stage 3, 6-7;
+libname SOIDATA 'C:\Users\jhall\Desktop\SOI Data\2007'; /* JBH */
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 1. Import CPS data.   */
+%LET _CLIENTTASKLABEL='1. Import CPS data.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+*OPTIONS PAGESIZE=84 LINESIZE=111; /* PORTRAIT  */
+OPTIONS PAGESIZE=59 LINESIZE=160 CENTER ; /* LANDSCAPE */
+/*
+    =======================================
+
+           PricewaterhouseCoopers
+
+        STATISTICAL MATCHING PROJECT
+
+        March 2008 CPS  <-> 2007 Public Use File (SOI)
+
+
+
+
+    Program CPSPREP: Create a Composite Extract
+                     from the MARCH 2008 CURRENT
+                     POPULATION SURVEY
+    =======================================
+*/
+
+/*
+        Create DataSets
+*/
+
+DATA EXTRACT.HOUSEHLD(KEEP=HID HHHTYPE HNUMPER HNUMFAM HTYPE HTENURE HTOTVAL
+                         GESTCEN GEREG HENGVAL HFDVAL)
+     EXTRACT.FAMILY(KEEP=HID FID FKIND FTYPE FPERSONS FHEADIDX FWIFEIDX
+                         FHUSBIDX FSPOUIDX FSUPWGT FMVSL)
+     EXTRACT.PERSON(KEEP=HID PID FID MARSUPWT /* IDs and Weight */
+                         AEXPRRP AAGE AMARITL ASPOUSE ASEX AHGA PRDTRACE PEHSPNON PSTAT /* Demographics */
+                         AFAMNUM AFAMTYP AFAMREL APFREL HHDREL FAMREL HHDFMX /* Family Relationships */
+                         AENRLW AHSCOL AFTPT /* School Status (Last Week, Not Available for Last Year) */ 
+					     WORKYN WTEMP NWLOOK NWLKWK RSNNOTW WKSWORK WKCHECK LOSEWKS LKNONE LKWEEKS LKSTRCH PYRSN PHMEMPRS HRSWK HRCHECK PTYN PTWEEKS PTRSN /* Labor Force Status */
+                         WSALVAL SEMPVAL FRSEVAL UCVAL SSVAL RTMVAL INTVAL DIVVAL RNTVAL ALMVAL /* Major Sources of Income */
+                         WCVAL PAWVAL VETVAL DSABVAL CSPVAL FINVAL SSIVAL /* Other Income */
+                         PENPLAN PENINCL /* Pension Coverage */
+                         MCARE MCAID CHAMP HIYN HIOWN HIEMP HIPAID COVGH COVHI CHMC CHHI /* Health Insurance Coverage */
+                         PMVCARE PMVCAID EMCONTRB /* Health Insurance Cost */
+                        ) ;
+
+INFILE CPSDATA LRECL=972 ;
+INPUT (RTYPE) (1.) @ ;
+/*
+        Household Records
+*/
+        IF RTYPE = 1 THEN DO;
+                INPUT (HID HHHTYPE HNUMPER HNUMFAM HTYPE HTENURE HTOTVAL
+                       GESTCEN GEREG HENGVAL HFDVAL)
+                      (@2 5. @20 1. @21 2. @23 2. 1. @35 1. @248 8.
+                       @40 2. @39 1. @86 4. @81 4.) ;
+                IF HHHTYPE = 1 THEN DO;
+                        OUTPUT EXTRACT.HOUSEHLD;
+                END;
+        END;
+/*
+        Family Records
+*/
+        IF RTYPE = 2 THEN DO;
+                INPUT (HID FID FKIND FTYPE FPERSONS FHEADIDX FWIFEIDX
+                       FHUSBIDX FSPOUIDX FSUPWGT FMVSL)
+                      (@2 5. 2. 1. 1. 2. 2. 2. 2. 2. @233 8. @247 4.) ;
+                FSUPWGT = FSUPWGT / 100. ;
+                OUTPUT EXTRACT.FAMILY;
+        END;
+/*
+        Person Records
+		NOTE: The FID here is for the related subfamily, not the primary family. This is OK but should be understood.
+*/
+        IF RTYPE = 3 THEN DO;
+                INPUT (HID PID FID MARSUPWT /* IDs and Weight */
+                       AEXPRRP AAGE AMARITL ASPOUSE ASEX AHGA PRDTRACE PEHSPNON PSTAT /* Demographics */
+                       AFAMNUM AFAMTYP AFAMREL APFREL HHDREL FAMREL HHDFMX /* Family Relationships */
+                       AENRLW AHSCOL AFTPT /* School Status (Last Week, Not Available for Last Year) */ 
+					   WORKYN WTEMP NWLOOK NWLKWK RSNNOTW WKSWORK WKCHECK LOSEWKS LKNONE LKWEEKS LKSTRCH PYRSN PHMEMPRS HRSWK HRCHECK PTYN PTWEEKS PTRSN /* Labor Force Status */
+                       WSALVAL SEMPVAL FRSEVAL UCVAL SSVAL RTMVAL INTVAL DIVVAL RNTVAL ALMVAL /* Major Sources of Income */
+                       WCVAL PAWVAL VETVAL DSABVAL CSPVAL FINVAL SSIVAL /* Other Income */
+                       PENPLAN PENINCL /* Pension Coverage */
+                       MCARE MCAID CHAMP HIYN HIOWN HIEMP HIPAID COVGH COVHI CHMC CHHI /* Health Insurance Coverage */
+                       PMVCARE PMVCAID EMCONTRB /* Health Insurance Cost */
+                      )
+                      (@2 5. @9 2. @44 2. @66 8.
+                       @13 2. 2. 1. 2. 1. @22 2. 2. 1. 1.
+                       @29 2. 1. 1. 1. 1. 2. 2. 
+                       @142 1. 1. 1.
+					   @165 1. 1. 1. 2. 1. 2. 1. 1. 1. 2. 1. 1. 1. 2. 1. 1. 2. 1.
+                       @243 6. @256 6. @269 6. @278 5. @291 5. @379 6. @386 5. @393 5. @399 5. @421 5.
+                       @285 5. @305 5. @317 5. @360 6. @415 5. @427 5. @819 5.
+                       @482 1. 1. 
+                       @469 1. 1. 1. 1. 1. 1. 1. @484 1. 1. 1. 1.
+					   @643 5. 5. 4.
+                      );
+                MARSUPWT = MARSUPWT / 100. ;
+                OUTPUT EXTRACT.PERSON;
+        END;
+RUN;
+/*
+        Sort Files
+*/
+PROC SORT DATA=EXTRACT.HOUSEHLD;BY HID;
+PROC SORT DATA=EXTRACT.FAMILY;BY HID FID;
+PROC SORT DATA=EXTRACT.PERSON;BY HID FID PID; /* Include FID in the sort for purposes of merging in the family data. */
+/*
+        Composite Person File w/ Family Information Attached
+*/
+DATA EXTRACT.FAMPER;
+MERGE   EXTRACT.FAMILY(IN=INP)
+        EXTRACT.PERSON(IN=INH);
+BY HID FID;
+RUN;
+PROC SORT DATA=EXTRACT.FAMPER; BY HID /*FID*/ PID;
+PROC SORT DATA=EXTRACT.PERSON; BY HID /*FID*/ PID; /* Now that the family data have been merged in, FID is no longer relevant. */
+/*
+                Table 1.0 - Household Summary
+*/
+PROC MEANS N MEAN SUM STD MIN MAX DATA=EXTRACT.HOUSEHLD;
+TITLE1 'Table 1. - MARCH 2008 Current Population Survey' ;
+TITLE2 'Household Records' ;
+TITLE3 '(Unweighted Record Counts)' ;
+RUN;
+/*
+                Table 2.0 - Family Summary
+*/
+PROC MEANS N MEAN SUM STD MIN MAX DATA=EXTRACT.FAMILY;
+TITLE1 'Table 1. - MARCH 2008 Current Population Survey' ;
+TITLE2 'Family Records' ;
+TITLE3 '(Unweighted Record Counts)' ;
+RUN;
+/*
+                Table 3.0 - Person Summary
+*/
+PROC MEANS N MEAN SUM STD MIN MAX DATA=EXTRACT.PERSON;
+TITLE1 'Table 1. - MARCH 2008 Current Population Survey' ;
+TITLE2 'Person Records' ;
+TITLE3 '(Unweighted Record Counts)' ;
+RUN;
+/*
+                Table 4.0 - Household Summary
+*/
+PROC MEANS N MEAN SUM STD MIN MAX DATA=EXTRACT.FAMPER;
+TITLE1 'Table 1. - MARCH 2008 Current Population Survey' ;
+TITLE2 'Composite Record - Family & Person' ;
+TITLE3 '(Unweighted Record Counts)' ;
+RUN;
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 2. Prepare tax returns and related information from CPS data.   */
+%LET _CLIENTTASKLABEL='2. Prepare tax returns and related information from CPS data.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+*OPTIONS PAGESIZE=84 LINESIZE=111; /* PORTRAIT  */
+OPTIONS PAGESIZE=59 LINESIZE=160 CENTER ; /* LANDSCAPE */
+/*
+    =======================================
+           PricewaterhouseCoopers
+
+        STATISTICAL MATCHING PROJECT
+
+    March 2008 CPS  <-> 2007 Public Use File (SOI)
+
+
+
+    Program CPS-RETS:Create Tax Returns from
+                     the MARCH 2008 CURRENT
+                     POPULATION SURVEY.
+    =======================================
+*/
+
+PROC FORMAT;
+        VALUE JS 1 = 'Single Returns'
+                 2 = 'Joint Returns'
+                 3 = 'Head of Household' ;
+        VALUE AGEH LOW  -  24 = 'Under 25'
+                    25  -  34 = '25 lt 35'
+                    35  -  44 = '35 lt 45'
+                    45  -  54 = '45 lt 55'
+                    55  -  64 = '55 lt 65'
+                    65  - HIGH = '65 and Over' ;
+        VALUE JY LOW        -       10000 =  'LESS THAN $10,000'
+                 10000      -       20000 =  '$10,000 TO $20,000'
+                 20000      -       30000 =  '$20,000 TO $30,000'
+                 30000      -       40000 =  '$30,000 TO $40,000'
+                 40000      -       50000 =  '$40,000 TO $50,000'
+                 50000      -       75000 =  '$50,000 TO $75,000'
+                 75000      -      100000 =  '$75,000 TO $100,000'
+                100000      -      200000 =  '$100,000 TO $200,000'
+                200000      -        HIGH =  '$200,000 AND OVER' ;
+        VALUE AGEDE LOW -    0 = 'Non-Aged Return'
+                      1 - HIGH = 'Aged Return' ;
+        VALUE IFDEPT         0 = 'Non-Dependent Filer'
+                             1 = 'Dependent Filer' ;
+        VALUE DEPNE LOW -    0 = 'No Dependents'
+                      1 - HIGH = 'With Dependents' ;
+        VALUE FILST          0 = 'Non-Filers'
+                             1 = 'Filers' ;
+/*
+        -------------------------------------------------------------------
+        MACRO Section - The following MACROS are defined in this section:
+
+                %CREATE       = Create a CPS Tax Unit and store it in
+                                in the TREC(,) array.
+                %SEARCH       = The inner loop of the processing algorithm.
+                                Searches all household members except
+                                reference person & spouse to determine
+                                if there are dependents.
+                %ADDEPT       = Adds a dependent to a Tax Unit. Arguments
+                                are the person number of the (new) dependent
+                                and the Tax Unit number.
+                %OUTPUT       = After all CPS Tax Units have been created,
+                                output all records.
+                %IFDEPT       = Determines dependency status.
+                %FILST        = Determines whether or not a CPS Tax Unit
+                                actually files a return.
+                %GROSS        = Computes Gross Income (for determining
+                                filing requirements) for the Tax Unit.
+                %SETPARMS     = Initializes income threshold amounts for
+                                determining filing status.
+                %FILLREC      = Fills Up Person Array for each individual
+                                in the household.
+                %HHSTATUS     = Determines whether a single individual with
+                                dependents can or will file as a head of
+                                household return.
+
+        -------------------------------------------------------------------
+*/
+
+%MACRO CREATE ( PERSON ) ;
+/*
+        -----------------------------
+        Create CPS Tax Units
+        -----------------------------
+
+*/
+
+NUNITS = NUNITS + 1 ;
+/*
+        Flag this Person
+*/
+PREC(&PERSON , 55) = 1.0 ;
+/*
+        Income Items
+*/
+WSALVAL = PREC(&PERSON , 20) ;
+WSALVALP = WSALVAL ;
+INTVAL = PREC(&PERSON , 26) ;
+DIVVAL = PREC(&PERSON , 27) ;
+ALMVAL = PREC(&PERSON , 29) ;
+BIL = PREC(&PERSON , 21) ;
+RTMVAL = PREC(&PERSON , 25) ;
+RNTVAL = PREC(&PERSON , 28) ;
+FIL = PREC(&PERSON , 22) ;
+UCVAL = PREC(&PERSON , 23) ;
+SSVAL = PREC(&PERSON , 24) ;
+/*
+        Weight & Flags
+*/
+WT = PREC(&PERSON , 10) ;
+IFDEPT = PREC(&PERSON , 32) ;
+PREC(&PERSON , 30) = 1.0 ;
+/*
+        CPS Identifiers
+*/
+XHID = PREC(&PERSON ,  1) ;
+XFID = PREC(&PERSON ,  2) ;
+XPID = PREC(&PERSON , 11) ;
+XGESTCEN = GESTCEN ;
+XGEREG = GEREG ;
+
+/*
+        CPS Evaluation Criteria (HEAD)
+*/
+ZIFDEP = PREC(&PERSON , 32) ;
+ZNTDEP = 0;
+ZHTOTVAL = HTOTVAL ;
+ZAGEPT = PREC(&PERSON , 12) ;
+ZAGESP = 0;
+ZOLDES = 0;
+ZYOUNG = 0;
+ZWCVAL = PREC(&PERSON , 40) ;
+ZSOCSE = PREC(&PERSON , 24) ;
+ZSSIVAL = PREC(&PERSON , 51) ;
+ZPAWVAL = PREC(&PERSON , 41) ;
+ZVETVAL = PREC(&PERSON , 52) ;
+ZCSPVAL = PREC(&PERSON , 53) ;
+ZFINVAL = PREC(&PERSON , 54) ;
+ZDEPIN = 0;
+ZOWNER = 0;
+ZWSALVALPT = PREC(&PERSON , 20) ;
+ZWSALVALSP = 0;
+/*
+        Home Ownership Flag
+*/
+IF( NUNITS = 1 )THEN
+        DO;
+                IF( HTENURE = 1 )THEN ZOWNER = 1;
+        END;
+
+/*
+        Marital Status
+*/
+MS = PREC(&PERSON , 36);
+TYPE = 1.;
+IF( (MS = 1) OR (MS = 2) OR (MS = 3) )THEN TYPE=2.;
+SP_PTR = 0;
+ASPOUSE = PREC(&PERSON , 9);
+	IF ASPOUSE NE 0 THEN
+		DO i = 1 to HNUMPER;
+			IF PREC(i, 11) EQ ASPOUSE THEN SP_PTR = i;
+		END;
+AEXPRRP = PREC(&PERSON , 38);
+FTYPE = PREC(&PERSON ,  4) ;
+SELECT;
+        WHEN( TYPE = 1 )
+                DO;
+                        JS = 1;
+                        AGEH = PREC(&PERSON , 12) ;
+                        AGEDE = 0. ;IF( AGEH GE 65. )THEN AGEDE = 1.;
+                        AGES = .;
+                        DEPNE = 0.0 ;
+/*
+                        -----------------------------------------
+                        Certain single & separated individuals
+                        living alone are allowed to file as head
+                        of household.
+                        -----------------------------------------
+*/
+                        IF( ( (HTYPE = 6) OR (HTYPE = 7) ) AND (HNUMPER = 1) )THEN
+                                DO;
+                                        IF( MS = 6 )THEN JS = 3;
+                                END;
+
+                END;
+        WHEN( TYPE = 2 )
+                DO;
+                        JS = 2 ;
+                        AGEH = PREC(&PERSON , 12) ;
+                        AGEDE = 0. ;IF( AGEH GE 65. )THEN AGEDE = 1.;
+                        DEPNE = 0.0 ;
+						IF( SP_PTR NE 0 )THEN   /* May be absent     */
+                                DO;
+                                        AGES= PREC(SP_PTR , 12) ;
+                                        IF( AGES GE 65. )THEN AGEDE = AGEDE + 1.;
+                                        WSALVALS = PREC(SP_PTR , 20) ;
+                                        WSALVAL = WSALVAL + WSALVALS ;
+                                        INTVAL = INTVAL + PREC(SP_PTR , 26) ;
+                                        DIVVAL = DIVVAL + PREC(SP_PTR , 27) ;
+                                        ALMVAL = ALMVAL + PREC(SP_PTR , 29) ;
+                                        BIL = BIL + PREC(SP_PTR , 21) ;
+                                        RTMVAL = RTMVAL + PREC(SP_PTR , 25) ;
+                                        RNTVAL = RNTVAL + PREC(SP_PTR , 28) ;
+                                        FIL = FIL + PREC(SP_PTR , 22) ;
+                                        UCVAL = UCVAL + PREC(SP_PTR , 23) ;
+                                        SSVAL = SSVAL + PREC(SP_PTR , 24) ;
+                                        PREC(SP_PTR , 31) = 1.0 ;
+                                        /*
+                                                CPS Evaluation Criteria (SPOUSE)
+                                        */
+                                        ZAGESP = PREC(SP_PTR , 12) ;
+                                        ZWCVAL = ZWCVAL + PREC(SP_PTR , 40) ;
+                                        ZSOCSE = ZSOCSE + PREC(SP_PTR , 24) ;
+                                        ZSSIVAL = ZSSIVAL + PREC(SP_PTR , 51) ;
+                                        ZPAWVAL = ZPAWVAL + PREC(SP_PTR , 41) ;
+                                        ZVETVAL = ZVETVAL + PREC(SP_PTR , 52) ;
+                                        ZCSPVAL = ZCSPVAL + PREC(SP_PTR , 53) ;
+                                        ZFINVAL = ZFINVAL + PREC(SP_PTR , 54) ;
+                                        ZWSALVALSP = PREC(SP_PTR , 20) ;
+										XPIDS = PREC(SP_PTR, 11);
+                                END;
+                END;
+        OTHERWISE ;
+END;
+/*
+        Construct the Tax Unit
+*/
+        TREC(NUNITS  , 01) = JS ;
+        TREC(NUNITS  , 02) = IFDEPT ;
+        TREC(NUNITS  , 03) = AGEDE ;
+        TREC(NUNITS  , 04) = DEPNE ;
+        TREC(NUNITS  , 05) = CAHE ;
+        TREC(NUNITS  , 06) = AGEH ;
+        TREC(NUNITS  , 07) = AGES ;
+        TREC(NUNITS  , 08) = WSALVAL ;
+        TREC(NUNITS  , 09) = INTVAL ;
+        TREC(NUNITS  , 10) = DIVVAL ;
+        TREC(NUNITS  , 11) = ALMVAL ;
+        TREC(NUNITS  , 12) = BIL ;
+        TREC(NUNITS  , 13) = RTMVAL ;
+        TREC(NUNITS  , 14) = RNTVAL ;
+        TREC(NUNITS  , 15) = FIL ;
+        TREC(NUNITS  , 16) = UCVAL ;
+        TREC(NUNITS  , 17) = SSVAL ;
+        TREC(NUNITS  , 18) = INCOME ;
+        TREC(NUNITS  , 19) = 1.0 ;
+        TREC(NUNITS  , 20) = WT ;
+        DO NDP = 21 TO 36 ;
+                TREC(NUNITS , NDP) = 0.0 ;
+        END;
+        TREC(NUNITS  , 37) = &PERSON ;
+        TREC(NUNITS  , 38) = SP_PTR ;
+        TREC(NUNITS  , 39) = AEXPRRP ;
+        TREC(NUNITS  , 40) = FTYPE ;
+        TREC(NUNITS  , 41) = ZIFDEP ;
+        TREC(NUNITS  , 42) = ZNTDEP ;
+        TREC(NUNITS  , 43) = ZHTOTVAL ;
+        TREC(NUNITS  , 44) = ZAGEPT ;
+        TREC(NUNITS  , 45) = ZAGESP ;
+        TREC(NUNITS  , 46) = ZOLDES ;
+        TREC(NUNITS  , 47) = ZYOUNG ;
+        TREC(NUNITS  , 48) = ZWCVAL ;
+        TREC(NUNITS  , 49) = ZSOCSE ;
+        TREC(NUNITS  , 50) = ZSSIVAL ;
+        TREC(NUNITS  , 51) = ZPAWVAL ;
+        TREC(NUNITS  , 52) = ZVETVAL ;
+        TREC(NUNITS  , 53) = ZCSPVAL ;
+        TREC(NUNITS  , 54) = ZFINVAL ;
+        TREC(NUNITS  , 55) = ZDEPIN ;
+        TREC(NUNITS  , 56) = ZOWNER ;
+        TREC(NUNITS  , 57) = ZWSALVALPT ;
+        TREC(NUNITS  , 58) = ZWSALVALSP ;
+        TREC(NUNITS  , 59) = 0 ;
+        TREC(NUNITS  , 60) = 0 ;
+        TREC(NUNITS  , 61) = 0 ;
+        TREC(NUNITS  , 62) = 0 ;
+        TREC(NUNITS  , 63) = 0 ;
+        TREC(NUNITS  , 64) = 0 ;
+        TREC(NUNITS  , 65) = WSALVALP ;
+        TREC(NUNITS  , 66) = WSALVALS ;
+        DO NDP = 67 TO 82 ;
+                TREC(NUNITS , NDP) = 0.0 ;
+        END;
+/*
+        --------------------------------------
+        New Fields. Mostly for Non-filers.
+        --------------------------------------
+*/
+        XSCHB = 0.0 ;IF( INTVAL GT 400. )THEN XSCHB = 1;
+        XSCHF = 0.0 ;IF( FIL NE 0.0    )THEN XSCHF = 1;
+        XSCHE = 0.0 ;IF( RNTVAL NE 0.0  )THEN XSCHE = 1;
+        XSCHC = 0.0 ;IF( BIL NE 0.0    )THEN XSCHC = 1;
+/*
+        --------------------------------------
+        We'll count dependents later, after
+        all relationships have been set.
+        --------------------------------------
+*/
+        TREC(NUNITS  , 83) = 0.0 ;      /*      XXOODEP */
+        TREC(NUNITS  , 84) = 0.0 ;      /*      XXOPAR  */
+        TREC(NUNITS  , 85) = 0.0 ;      /*      XXTOT   */
+        TREC(NUNITS  , 86) = AGEDE ;    /*      XAGEX   */
+        TREC(NUNITS  , 87) = XGESTCEN ;   /*      XGESTCEN  */
+        TREC(NUNITS  , 88) = XGEREG ;  /*      XGEREG */
+        TREC(NUNITS  , 89) = XSCHB ;    /*      XSCHB   */
+        TREC(NUNITS  , 90) = XSCHF ;    /*      XSCHF   */
+        TREC(NUNITS  , 91) = XSCHE ;    /*      XSCHE   */
+        TREC(NUNITS  , 92) = XSCHC ;    /*      XSCHC   */
+        TREC(NUNITS  , 93) = XHID ;     /*      XHID    */
+        TREC(NUNITS  , 94) = XFID ;     /*      XFID    */
+        TREC(NUNITS  , 95) = XPID ;     /*      XPID    */
+		TREC(NUNITS  , 96) = XPIDS;     /*      XPIDS   */
+		
+        DO NDP = 101 TO 115 ;
+                TREC(NUNITS , NDP) = ./*0.0*/ ;
+        END;
+/*
+        ---------------------------------------
+        Dependents can't have dependents, so
+        limit this search to non-dependent
+        filers.
+        ---------------------------------------
+*/
+        IF( IFDEPT NE 1 )THEN
+                DO;
+                        %SEARCH1
+                END;
+
+/*
+        ---------------------------------------
+        Certain variables are for spouses only.
+        Let's reset some of these to missing so
+        not to cause any confusion.
+        ---------------------------------------
+*/
+        AGES = . ;
+        WSALVALS = . ;
+        SP_PTR = . ;
+        ZWSALVALSP = . ;
+		XPIDS = . ;
+
+%MEND CREATE ;
+
+%MACRO SEARCH1 ;
+/*
+        ---------------------------------------
+        PHASE I Search:
+        Search for Dependents Among Other
+        Members of the Family Who are not
+        Already Claimed on Another Return. In
+        order to determine which records to
+        search, we make a few assumptions:
+
+        1. A Person can't search for himself;
+        2. Searches are confined in Phase I to
+           immediate family members;
+        3. Can't already be a HEAD of a tax unit;
+        4. Can't already be a SPOUSE of a tax unit;
+        5. Can't already be a DEPENDENT of a tax unit.
+        ---------------------------------------
+*/
+DO JX = 1 TO HNUMPER;
+idxFID = PREC(JX ,  2) ;
+idxHEA = PREC(JX , 30) ;
+idxSPO = PREC(JX , 31) ;
+idxDEP = PREC(JX , 32) ;
+idxREL = PREC(JX , 38) ;
+IF( (JX NE IX) AND (idxFID = refFID) AND (idxDEP = 0) AND (idxSPO = 0)
+AND (idxHEA = 0) )THEN
+        DO;
+                %IFDEPT( JX , DFLAG )
+                /*
+                        -----------------------
+                        Add this Person to the
+                        Return as a Dependent
+                        -----------------------
+                */
+                IF( DFLAG = 1 )THEN
+                        DO;
+                                %ADDEPT( JX , NUNITS )
+                        END;
+        END;
+END;
+%MEND SEARCH1 ;
+
+%MACRO SEARCH2 ;
+/*
+        ---------------------------------------
+        PHASE II Search:
+
+        PURPOSE - Search for Dependencies Among
+        Tax Units. As a first approximation,
+        attach the dependents to the tax unit
+        with the highest income in the household.
+        ---------------------------------------
+*/
+HIGHEST = -9.9E32 ;
+idxHIGH = 0 ;
+DO IX = 1 TO NUNITS;
+        %TOTINCX( IX )
+        INCOME = TOTINCX ;
+        IF( INCOME GE HIGHEST )THEN
+                DO;
+                        HIGHEST = INCOME ;
+                        idxHIGH = IX ;
+                END;
+END;
+/*
+        --------------------------------------
+        Check non-dependent tax units other than
+        the highest income return and check for
+        dependencies. It's possible that the
+        highest income return could be a dependent
+        filer. In that case, just skip this
+        step.
+
+        At this stage, let's not allow joint
+        returns to become dependent filers since
+        we seem to be OK here.
+        --------------------------------------
+*/
+IF( TREC(idxHIGH , 2) NE 1)THEN
+DO IX = 1 TO NUNITS;
+        idxJS   = TREC(IX ,  1) ;
+        idxDEPF = TREC(IX ,  2) ;
+        idxRELC = TREC(IX , 39) ;
+        idxFAMT = TREC(IX , 40) ;
+        IF( (IX NE idxHIGH) AND (idxDEPF NE 1) AND (HIGHEST GT 0.0)
+            AND (idxJS NE 2) )THEN
+                DO;
+                SELECT;
+                        WHEN( (idxFAMT = 1) OR (idxFAMT = 3) OR (idxFAMT =5) )
+                                DO;
+                                        %TOTINCX( IX )
+                                        INCOME = TOTINCX ;
+                                        IF( INCOME LE 0.0 )THEN
+                                                DO;
+                                                        %COMBINE( IX , idxHIGH )
+                                                END;
+                                        IF( (INCOME GT 0.0) AND (INCOME LE /*3000.*/ 7500 /*JBH - not sure where they got this number */) )THEN
+                                                DO;
+                                                        %CONVERT( IX , idxHIGH )
+                                                END;
+                                END;
+                        WHEN( idxRELC = 11 )
+                                DO;
+                                        %COMBINE( IX , idxHIGH )
+                                END;
+                        OTHERWISE;
+                END;
+                END;
+END;
+%MEND SEARCH2 ;
+
+%MACRO CONVERT(IX , IY) ;
+/*
+        -----------------------------------------
+        PURPOSE - Convert an existing tax unit (IX)
+        to a dependent filer and add the dependent
+        information to the target return (IY).
+        -----------------------------------------
+*/
+TREC(&IX , 2) = 1 ;
+IXDEPS = TREC(&IX , 4) ;
+IYDEPS = TREC(&IY , 4) ;
+TREC(&IX , 4) = 0;         /* Dependents can't have dependents. */
+IXJS = TREC(&IX , 1) ;
+IYBEGIN = 20 + IYDEPS ;
+IF( IXJS = 2 )THEN
+        DO;
+                TREC(&IY , 4) = TREC(&IY , 4) + IXDEPS + 2 ;
+                TREC(&IY , IYBEGIN + 1) = TREC(&IX , 37) ;
+                TREC(&IY , IYBEGIN + 2) = TREC(&IX , 38) ;
+                IYBEGIN = 20 + IYDEPS + 2 ;
+        END;
+ELSE
+        DO;
+                TREC(&IY , 4) = TREC(&IY , 4) + IXDEPS + 1 ;
+                TREC(&IY , IYBEGIN + 1) = TREC(&IX , 37) ;
+                IYBEGIN = 20 + IYDEPS + 1 ;
+        END;
+IF( IXDEPS GT 0 )THEN
+        DO NDEPS = 1 TO IXDEPS ;
+                TREC(&IY , IYBEGIN + NDEPS) = TREC(&IX , 20 + NDEPS) ;
+                TREC(&IX , 20 + NDEPS) = 0.0 ;
+        END;
+
+%MEND CONVERT ;
+
+%MACRO COMBINE(IX , IY) ;
+/*
+        -----------------------------------------
+        PURPOSE - Combine an existing tax unit (IX)
+        with another return (IY) making all members
+        of IX dependents of IY.
+        -----------------------------------------
+*/
+
+TREC(&IX , 19) = 0.0 ;  /* No Longer a Tax Unit */
+%CONVERT(&IX , &IY)
+
+%MEND COMBINE ;
+
+%MACRO IFDEPT( PERSON , DFLAG ) ;
+/*
+        --------------------------------------
+        Purpose: Determine if Individual is a
+                 Dependent of the reference
+                 person.
+
+        In general, five tests must be met in
+        order for an individual to a dependent.
+        They are:
+
+                1. Relationship
+                2. Marital Status
+                3. Citizenship
+                4. Income
+                5. Support
+
+        To the extent supported by CPS data,
+        all five tests must be passed for an
+        individual to be a dependent.
+        --------------------------------------
+*/
+/*
+        Initialize: All Tests FALSE
+*/
+TEST1 = 0.0 ;
+TEST2 = 0.0 ;
+TEST3 = 0.0 ;
+TEST4 = 0.0 ;
+TEST5 = 0.0 ;
+&DFLAG = 0.0 ;
+AAGE = PREC(&PERSON , 12) ;
+INCOME = PREC(&PERSON , 20) + PREC(&PERSON , 21) + PREC(&PERSON , 22)
+       + PREC(&PERSON , 23) + PREC(&PERSON , 24) + PREC(&PERSON , 25)
+       + PREC(&PERSON , 26) + PREC(&PERSON , 27) + PREC(&PERSON , 28)
+       + PREC(&PERSON , 29) ;
+/*
+        ----------------------------------------------------------
+        Test #1: Relationship Test. Since at this
+                 phase of the program, we are only
+                 looking within families (or related
+                 subfamilies) this test is passed.
+        ----------------------------------------------------------
+*/
+TEST1 = 1.0 ;
+/*
+        ----------------------------------------------------------
+        Test #2: Marital Status. In general, married individuals
+                 filing a joint return cannot be dependents unless
+                 they file a return to receive a refund. Again,
+                 since we are looking at families, no married
+                 couples will be tested.
+        ----------------------------------------------------------
+*/
+TEST2 = 1.0 ;
+/*
+        ----------------------------------------------------------
+        Test #3. Citizen Test. Assume this is always met.
+        ----------------------------------------------------------
+*/
+TEST3 = 1.0 ;
+/*
+        ----------------------------------------------------------
+        Test #4. Income Test. In general, a person's income must
+                 be less than $3,400 to be eligible to be a
+                 dependent. But there are exceptions for children.
+        ----------------------------------------------------------
+*/
+IF( INCOME LE /*indexed*/3400. )THEN TEST4 = 1.0 ;
+%RELATION( RELATED )
+IF( (AEXPRRP = 5) OR (RELATED = -1) )THEN
+        DO;
+                IF( (AAGE LE 18) )THEN TEST4 = 1.0 ;
+                IF( (AAGE LE 23) AND (AENRLW GT 0.0) )THEN TEST4 = 1.0 ;
+        END;
+/*
+        -----------------------------------------------------------
+        Test #5. Support Test. General rule is that you must provide
+                 more than half of the support of the individual in
+                 order to qualify as a dependent.
+        -----------------------------------------------------------
+*/
+%TOTINCX( NUNITS )
+IF( ( (TOTINCX+INCOME) GT 0.0) )THEN
+        DO;
+                IF( (INCOME / (TOTINCX+INCOME) ) LT /*.50*/0.5 /* JBH - I should consider adjusting this. */)THEN TEST5 = 1.0 ;
+        END;
+ELSE
+        TEST5 = 1.0;
+DTEST = TEST1 + TEST2 + TEST3 + TEST4 + TEST5 ;
+IF( DTEST = 5.0 )THEN &DFLAG = 1.0 ;
+
+%MEND IFDEPT ;
+
+%MACRO RELATION( RELATED ) ;
+/*
+        -------------------------------------------
+        Relationship among related subfamilies
+        -------------------------------------------
+*/
+&RELATED = 99;
+RELIX = PREC(IX , 38);
+RELJX = PREC(JX , 38);
+/*
+        Offset for Reference Person
+*/
+SELECT;
+        WHEN( RELIX = 5 )GENIX = -1;
+        WHEN( RELIX = 7 )GENIX = -2;
+        WHEN( RELIX = 8 )GENIX =  1;
+        WHEN( RELIX = 9 )GENIX =  0;
+        WHEN( RELIX = 11)GENIX = -1;
+        OTHERWISE GENIX = 99;
+END;
+/*
+        Offset for Index Person
+*/
+SELECT;
+        WHEN( RELJX = 5 )GENJX = -1;
+        WHEN( RELJX = 7 )GENJX = -2;
+        WHEN( RELJX = 8 )GENJX =  1;
+        WHEN( RELJX = 9 )GENJX =  0;
+        WHEN( RELJX = 11)GENJX = -1;
+        OTHERWISE GENJX = 99;
+END;
+/*
+        Child Flag
+*/
+IF( (GENIX NE 99) AND (GENJX NE 99) )THEN
+        DO;
+                &RELATED = GENJX - GENIX ;
+        END;
+
+%MEND RELATION ;
+
+%MACRO MUSTFILE( PERSON , DEPFILE ) ;
+
+/*
+        -------------------------------------------
+        Determine if a Dependent Must File a Return
+
+        Note that since we are processing families,
+        we only need to check reference person and
+        not a spouse.
+        -------------------------------------------
+*/
+&DEPFILE = 0.0 ;
+WAGES = PREC(&PERSON , 20) ;
+INCOME = PREC(&PERSON , 20) + PREC(&PERSON , 21) + PREC(&PERSON , 22)
+       + PREC(&PERSON , 23) + PREC(&PERSON , 24) + PREC(&PERSON , 25)
+       + PREC(&PERSON , 26) + PREC(&PERSON , 27) + PREC(&PERSON , 28)
+       + PREC(&PERSON , 29) ;
+IF( (WAGES  GT DEPWAGES) )THEN &DEPFILE = 1.0 ;
+IF( (INCOME GT DEPTOTAL) )THEN &DEPFILE = 1.0 ;
+
+%MEND MUSTFILE ;
+
+%MACRO ADDEPT( PERSON , RETURN ) ;
+/*
+        ---------------------------------------
+        Adds a dependent to the current Tax Unit
+        ---------------------------------------
+*/
+PREC(&PERSON , 32) = 1.0 ;
+TREC(&RETURN ,  4) = TREC(&RETURN ,  4) + 1.0 ;
+DEPNE = TREC(&RETURN , 4) ;
+DAGE = PREC(&PERSON , 12) ;
+DXPID = PREC(&PERSON , 11) ;
+TREC(&RETURN , 20 + DEPNE) = &PERSON ;
+TREC(&RETURN , 66 + DEPNE) = DAGE ;
+TREC(&RETURN , 100 + DEPNE) = DXPID ;
+%MEND ADDEPT ;
+
+%MACRO OUTPUT ;
+/*
+        ---------------------------------------
+        Output CPS Tax Units for This Household
+        ---------------------------------------
+*/
+DO N = 1 TO NUNITS ;
+        IF( (TREC(N , 19) = 1.0) )THEN
+                DO;
+                        JS = TREC(N ,  1) ;
+                    IFDEPT = TREC(N ,  2) ;
+                     AGEDE = TREC(N ,  3) ;
+                     DEPNE = TREC(N ,  4) ;
+                      CAHE = TREC(N ,  5) ;
+                      AGEH = TREC(N ,  6) ;
+                      AGES = TREC(N ,  7) ;
+                       WSALVAL = TREC(N ,  8) ;
+                     INTVAL = TREC(N ,  9) ;
+                       DIVVAL = TREC(N , 10) ;
+                   ALMVAL = TREC(N , 11) ;
+                       BIL = TREC(N , 12) ;
+                  RTMVAL = TREC(N , 13) ;
+                     RNTVAL = TREC(N , 14) ;
+                       FIL = TREC(N , 15) ;
+                     UCVAL = TREC(N , 16) ;
+                    SSVAL = TREC(N , 17) ;
+                             %TOTINCX( N )
+                    INCOME = TOTINCX ;
+                   RETURNS = TREC(N , 19) ;
+                        WT = TREC(N , 20) ;
+                    ZIFDEP = TREC(N ,  2) ;
+                    ZNTDEP = TREC(N , 42) ;
+                    ZHTOTVAL = TREC(N , 43) ;
+                    ZAGEPT = TREC(N , 44) ;
+                    ZAGESP = TREC(N , 45) ;
+                    ZOLDES = TREC(N , 46) ;
+                    ZYOUNG = TREC(N , 47) ;
+                    ZWCVAL = TREC(N , 48) ;
+                    ZSOCSE = TREC(N , 49) ;
+                    ZSSIVAL = TREC(N , 50) ;
+                    ZPAWVAL = TREC(N , 51) ;
+                    ZVETVAL = TREC(N , 52) ;
+                    ZCSPVAL = TREC(N , 53) ;
+                    ZFINVAL = TREC(N , 54) ;
+                    ZDEPIN = TREC(N , 55) ;
+                    ZOWNER = TREC(N , 56) ;
+                    ZWSALVALPT = TREC(N , 57) ;
+                    ZWSALVALSP = TREC(N , 58) ;
+                      WSALVALP = TREC(N , 65) ;
+                      WSALVALS = TREC(N , 66) ;
+/*
+                   Additional Fields for Non-Filers
+                   NOTE: Locations 83, 84 & 85 will
+                         be set now.
+*/
+                   TXPYE = 1;IF( JS = 2 )THEN TXPYE = 2;
+                   XXTOT   = TXPYE + DEPNE;
+/*
+                   Check relationship codes among dependents
+*/
+                   XXOODEP = 0.0 ;
+                   XXOPAR = 0.0 ;
+                   XXOCAH = 0.0 ;
+                   XXOCAWH = 0.0 ;
+                   IF( (DEPNE) GT 0.0 )THEN
+                        DO I = 1 TO DEPNE ;
+                                PPTR = 20 + I ;
+                                DINDEX = TREC(N , PPTR) ;
+                                DREL = PREC(DINDEX , 38) ;
+                                DAGE = PREC(DINDEX , 12) ;
+                                IF( DREL = 8 )THEN XXOPAR = XXOPAR + 1;
+                                IF( (DREL GE 9) AND (DAGE GE 18) )THEN XXOODEP = XXOODEP + 1;
+                                IF( (DAGE LT 18) )THEN XXOCAH = XXOCAH + 1;
+                        END;
+
+                   XAGEX   = TREC(N , 86) ;
+                   XGESTCEN  = TREC(N , 87) ;
+                   XGEREG = TREC(N , 88) ;
+                   XSCHB   = TREC(N , 89) ;
+                   XSCHF   = TREC(N , 90) ;
+                   XSCHE   = TREC(N , 91) ;
+                   XSCHC   = TREC(N , 92) ;
+                   XHID    = TREC(N , 93) ;
+                   XFID    = TREC(N , 94) ;
+                   XPID    = TREC(N , 95) ;
+				   XPIDS   = TREC(N , 96) ;
+				   XPID01  = TREC(N ,101) ;
+				   XPID02  = TREC(N ,102) ;
+				   XPID03  = TREC(N ,103) ;
+				   XPID04  = TREC(N ,104) ;
+				   XPID05  = TREC(N ,105) ;
+				   XPID06  = TREC(N ,106) ;
+				   XPID07  = TREC(N ,107) ;
+				   XPID08  = TREC(N ,108) ;
+				   XPID09  = TREC(N ,109) ;
+				   XPID10  = TREC(N ,110) ;
+				   XPID11  = TREC(N ,111) ;
+				   XPID12  = TREC(N ,112) ;
+				   XPID13  = TREC(N ,113) ;
+				   XPID14  = TREC(N ,114) ;
+				   XPID15  = TREC(N ,115) ;
+/*
+                    Oldest & Youngest Dependents
+*/
+AAGEDO = . ;
+AAGEDY = . ;
+IF( (DEPNE) GT 0.0 )THEN
+        DO;
+                AAGEDO = -9.9E16 ;
+                AAGEDY = 9.9E16 ;
+                DO I = 1 TO DEPNE ;
+                        DINDEX = 66 + I ;
+                        DAGE = TREC(N , DINDEX) ;
+                        IF( (DAGE GT AAGEDO) )THEN AAGEDO = DAGE;
+                        IF( (DAGE LT AAGEDY) )THEN AAGEDY = DAGE;
+                END;
+                ZOLDES = AAGEDO;
+                ZYOUNG = AAGEDY;
+        END;
+/*
+        Dependent Income
+*/
+ZDEPIN = 0.0 ;
+IF( DEPNE GT 0.0 )THEN
+        DO I = 1 TO DEPNE;
+                PPTR = 20 + I ;
+                DINDEX = TREC(N , PPTR) ;
+                IF( PREC(DINDEX , 55) = 0.0 )THEN
+                        DO;
+                                ZDEPIN = ZDEPIN +
+                                PREC(DINDEX , 20) + PREC(DINDEX , 21) + PREC(DINDEX , 22)
+                              + PREC(DINDEX , 23) + PREC(DINDEX , 24) + PREC(DINDEX , 25)
+                              + PREC(DINDEX , 26) + PREC(DINDEX , 27) + PREC(DINDEX , 28)
+                              + PREC(DINDEX , 29) ;
+                        END;
+        END;
+                        %FILST
+						*****
+							NEW SECTION TO SELECT NON-FILERS
+							FOR NOW, WE APPROXIMATE THE TPC
+							NON-FILER APPROACH BASED ON CILKE
+						*****;
+						/*	MARRIED, JOINT RETURNS LOOK OK. */
+						IF( JS EQ 2 )THEN
+							DO;
+								IF( FILST = 1 )THEN OUTPUT EXTRACT.CPSRETS;
+								ELSE
+								OUTPUT EXTRACT.CPSNONF;
+							END;
+						/*	SINGLE RETURNS: WE NEED SOME MORE FILERS	*/
+						IF( JS EQ 1 )THEN
+							DO;
+								IF( FILST = 1 )THEN OUTPUT EXTRACT.CPSRETS;
+								ELSE
+									DO;
+										PROB = /*0.45*/1/*JBH*/ ; /* PROBABILITY OF FILING	*/
+										Z = RANUNI( ISEED1 ) ;
+										IF( Z LE PROB )THEN OUTPUT EXTRACT.CPSRETS;
+										ELSE
+										OUTPUT EXTRACT.CPSNONF;
+									END;
+							END;
+						/*	HEAD OF HOUSEHOLD RETURNS: WE NEED SOME MORE	*/
+						IF( JS EQ 3 )THEN
+							DO;
+								IF( FILST = 1 )THEN OUTPUT EXTRACT.CPSRETS;
+								ELSE
+									DO;
+										PROB = /*0.605*/1/*JBH*/ ; /* PROBABILITY OF FILING	*/
+										Z = RANUNI( ISEED3 ) ;
+										IF( Z LE PROB )THEN OUTPUT EXTRACT.CPSRETS;
+										ELSE
+										OUTPUT EXTRACT.CPSNONF;
+									END;
+							END;
+        END;
+END;
+%MEND OUTPUT ;
+
+
+%MACRO TOTINCX( RETURN ) ;
+/*
+        -------------------------
+        Total Income for Tax Unit
+        -------------------------
+*/
+TOTINCX = TREC(&RETURN ,  8) + TREC(&RETURN ,  9) + TREC(&RETURN , 10)
+        + TREC(&RETURN , 11) + TREC(&RETURN , 12) + TREC(&RETURN , 13)
+        + TREC(&RETURN , 14) + TREC(&RETURN , 15) + TREC(&RETURN , 16)
+        + TREC(&RETURN , 17) ;
+
+%MEND TOTINCX ;
+
+%MACRO FILST ;
+/*
+        -----------------------------------------------------------------------
+        Filer/Non-Filer Test -  This macro checks to see whether a CPS tax unit
+                                actually files a tax return, since this is the
+                                population we are trying to create in order to
+                                align with the SOI. If we decide that that a
+                                CPS tax unit will actually file a return, then
+                                a tax return is flagged to appear in the output
+                                dataset (FILST = 1). Otherwise, the unit is
+                                omitted from the final file.
+
+                                Three tests are performed to determine if a CPS
+                                tax unit files a return:
+
+                                        (1) Wage test. If anyone in the tax unit
+                                            (head or spouse) has wage and salary
+                                            income, the unit is deemed to have
+                                            file a return. While this is not a
+                                            technically accurate representation
+                                            of the law, experience has shown that
+                                            it works quite well in the CPS world.
+
+                                        (2) Gross Income Test. The income thresh-
+                                            olds in the "Filing Requirements"
+                                            section of the Form 1040 Instructions
+                                            are used to determine if a CPS tax
+                                            unit is required to file a tax return.
+                                            Due to underreporting of income, it is
+                                            likely that this will be too stringent
+                                            a test (but mitigated somewhat by the
+                                            Wage test). To assist in the targetting
+                                            of SOI return totals, an adjustment
+                                            (DELTA) is allowed to the gross income
+                                            test thresholds for each filing status.
+
+                                        (3) Dependent Filer Test. Individuals who are
+                                            claimed a dependents on another tax
+                                            return but who are required to file a
+                                            return.
+
+                                        (4) Random selection. If necessary, CPS
+                                            tax units can be randomly selected to
+                                            file a tax return. (Not enforced at
+                                            this time.)
+        -----------------------------------------------------------------------
+*/
+FILST = 0.0 ;
+/*
+        Test 1. - Wage Test
+*/
+SELECT;
+        WHEN ( JS = 1 )
+                DO;
+                        IF( WSALVAL GE WAGE1 )THEN FILST = 1 ;
+                END;
+        WHEN ( JS = 2 )	/*	Note: Different Test for Dependents	*/
+                DO;
+					IF( DEPNE GT 0.) THEN
+						DO;
+                        	IF( WSALVAL GE WAGE2 )THEN FILST = 1 ;
+						END;
+					ELSE
+						DO;
+							IF( WSALVAL GE WAGE2NK )THEN FILST = 1;
+						END;
+                END;
+        WHEN ( JS = 3 )
+                DO;
+                        IF( WSALVAL GE WAGE3 )THEN FILST = 1 ;
+                END;
+END;
+/*
+        Test 2. - Gross Income Test
+*/
+INCOME = WSALVAL + INTVAL + DIVVAL + ALMVAL + BIL + RTMVAL
+       + RNTVAL + FIL + UCVAL  ;
+SELECT;
+        WHEN ( JS = 1 ) /* Single Returns    */
+                DO;
+                        AMOUNT = (GROSS1N + DELTA1N - DEPEX1 * DEPNE) ;
+                        IF( AGEDE NE 0 )THEN AMOUNT = (GROSS1A + DELTA1A - DEPEX1 * DEPNE) ;
+                        IF( INCOME GE AMOUNT )THEN FILST = 1 ;
+                END;
+        WHEN ( JS = 2 ) /* Joint Returns     */
+                DO;
+                        AMOUNT = (GROSS2N0 + DELTA2N0 - DEPEX2 * DEPNE) ;
+                        IF( AGEDE = 1 )THEN AMOUNT = (GROSS2A1 + DELTA2A1 - DEPEX2 * DEPNE) ;
+                        IF( AGEDE = 2 )THEN AMOUNT = (GROSS2A2 + DELTA2A2 - DEPEX2 * DEPNE) ;
+                        IF( INCOME GE AMOUNT )THEN FILST = 1 ;
+                END;
+        WHEN ( JS = 3 ) /* Head of Household */
+                DO;
+                        AMOUNT = (GROSS3N + DELTA3N) ;
+                        IF( AGEDE NE 0 )THEN AMOUNT = (GROSS3A + DELTA3A - DEPEX3 * DEPNE) ;
+                        IF( INCOME GE AMOUNT )THEN FILST = 1 ;
+                END;
+        OTHERWISE
+                DO;
+                        PUT '*** ERROR IN FILING STATUS FLAG' ;
+                        STOP;
+                END;
+END;
+/*
+        Test 3. - Dependent Filers
+*/
+IF( IFDEPT = 1 )THEN FILST = 1;
+/*
+        Test 4. - Random Selection
+*/
+IF(  (JS = 3) AND (AGEDE GT 0) AND (INCOME LT /*6500.*/6500)/**/ /*JBH - I'm not sure where they got this figure. */
+              AND (DEPNE GT 0) )THEN FILST = 0. ;
+/*
+		Test 5. - Negative Income
+*/
+IF( BIL LT 0.0 )THEN FILST = 1.;
+IF( FIL LT 0.0 )THEN FILST = 1.;
+IF( RNTVAL LT 0.0 )THEN FILST = 1.;
+%MEND  FILST ;
+
+%MACRO SETPARMS ;
+/*
+        ----------------------------
+        2008 Filing Thresholds, Etc.
+
+		NOTE: From 1040 Instructions 
+			  relating to "Who Has To
+			  File?"
+        ----------------------------
+*/
+/*
+        Gross Income Test - Single
+*/
+GROSS1N = /*indexed*/8750. ; DELTA1N = /*0.*/0/*JBH*/;
+GROSS1A = /*indexed*/10050. ; DELTA1A = /*0.*/0/*JBH*/;
+/*
+        Gross Income Test - Head of Household
+*/
+GROSS3N = /*indexed*/11250. ; DELTA3N = /*0.*/0/*JBH*/;
+GROSS3A = /*indexed*/12550. ; DELTA3A = /*0.*/0/*JBH*/;
+/*
+        Gross Income Test - Joint
+*/
+GROSS2N0 = /*indexed*/17500. ; DELTA2N0 = /*0.*/0/*JBH*/;
+GROSS2A1 = /*indexed*/18550. ; DELTA2A1 = /*0.*/0/*JBH*/;
+GROSS2A2 = /*indexed*/19600. ; DELTA2A2 = /*0.*/0/*JBH*/;
+/*
+        Gross Income Test - Qualifying Widow(er) w/ Dependent Child
+*/
+GROSS4N = /*indexed*/14100. ; DELTA4N = /*0.*/0/*JBH*/;
+GROSS4A = /*indexed*/15150. ; DELTA4A = /*0.*/0/*JBH*/;
+/*
+        Income Thresholds for Dependent Filers
+*/
+DEPWAGES = 0.0 ;
+DEPTOTAL = /*1000.*/3000. /*JBH*/ ;
+/*
+        Wage Thresholds for Non-Dependent Filers
+*/
+WAGE1 = /*1000.*/3000. /*JBH*/ ;  	/* Single */
+WAGE2 = /*250.*/1./*JBH*/ ;  	/* Joint, With Kids  */
+WAGE2NK = /*15000.*/ /*13000.*/ 1./*JBH*/;	/* Joint, No Kids */
+WAGE3 = 1. ;  		/* Head   */
+/*
+        Dependent Exemption
+*/
+DEPEX1 = /*indexed*/3400. ;
+DEPEX2 = /*indexed*/3400. ;
+DEPEX3 = /*indexed*/3400. ;
+
+%MEND  SETPARMS ;
+
+%MACRO FILLREC ;
+                PREC(NPER , 1)  = HID ;
+                PREC(NPER , 2)  = FID ;
+                PREC(NPER , 3)  = FKIND;
+                PREC(NPER , 4)  = FTYPE;
+                PREC(NPER , 5)  = FPERSONS;
+                PREC(NPER , 6)  = FHEADIDX;
+                PREC(NPER , 7)  = FWIFEIDX;
+                PREC(NPER , 8)  = FHUSBIDX;
+                PREC(NPER , 9)  = ASPOUSE;     /* NOTE: Change from previous matches! */
+                PREC(NPER , 10) = FSUPWGT;
+                PREC(NPER , 11) = PID;
+                PREC(NPER , 12) = AAGE;
+                PREC(NPER , 13) = ASEX;
+                PREC(NPER , 14) = AFAMREL;    
+                PREC(NPER , 15) = APFREL;
+                PREC(NPER , 16) = HHDREL;
+                PREC(NPER , 17) = FAMREL;
+                PREC(NPER , 18) = HHDFMX;
+                PREC(NPER , 19) = MARSUPWT;
+                PREC(NPER , 20) = WSALVAL;
+                PREC(NPER , 21) = SEMPVAL;
+                PREC(NPER , 22) = FRSEVAL;
+                PREC(NPER , 23) = UCVAL;
+                PREC(NPER , 24) = SSVAL;
+                PREC(NPER , 25) = RTMVAL;
+                PREC(NPER , 26) = INTVAL;
+                PREC(NPER , 27) = DIVVAL;
+                PREC(NPER , 28) = RNTVAL;
+                PREC(NPER , 29) = ALMVAL;
+                PREC(NPER , 30) = 0.0;
+                PREC(NPER , 31) = 0.0;
+                PREC(NPER , 32) = 0.0;
+                PREC(NPER , 33) = PSTAT;
+                PREC(NPER , 34) = AFAMNUM;
+                PREC(NPER , 35) = AFAMTYP;
+                PREC(NPER , 36) = AMARITL;
+                PREC(NPER , 37) = AENRLW;
+                PREC(NPER , 38) = AEXPRRP;
+                PREC(NPER , 39) = AHGA;
+                PREC(NPER , 40) = WCVAL;
+                PREC(NPER , 41) = PAWVAL;
+                PREC(NPER , 42) = DSABVAL;
+                PREC(NPER , 43) = HIYN;
+                PREC(NPER , 44) = HIOWN;
+                PREC(NPER , 45) = HIEMP;
+                PREC(NPER , 46) = HIPAID;
+                PREC(NPER , 47) = PENPLAN;
+                PREC(NPER , 48) = PENINCL;
+                PREC(NPER , 49) = 0.0 ;
+                PREC(NPER , 50) = 0.0 ;
+                PREC(NPER , 51) = SSIVAL;
+                PREC(NPER , 52) = VETVAL;
+                PREC(NPER , 53) = CSPVAL;
+                PREC(NPER , 54) = FINVAL;
+                PREC(NPER , 55) = 0.0 ;
+				/*	NEW CPS VARIABLES ADDED JULY 2009	*/
+				PREC(NPER , 56) = HENGVAL;
+				PREC(NPER , 57) = HFDVAL;
+				PREC(NPER , 58) = FMVSL;
+				PREC(NPER , 59) = MCARE;
+				PREC(NPER , 60) = MCAID;
+				PREC(NPER , 61) = CHAMP;
+				*PREC(NPER , 62) = PENATVTY;
+%MEND FILLREC ;
+
+%MACRO HHSTATUS( INDEX ) ;
+/*
+        ----------------------------------------
+        Determine Head of Household Status
+        ----------------------------------------
+*/
+        INCOME = 0.0 ;
+        DO IUNIT = 1 TO NUNITS ;
+                %TOTINCX( IUNIT )
+                INCOME = INCOME + TOTINCX;
+        END;
+        IF( INCOME GT 0.0 )THEN
+                DO;
+                        %TOTINCX( &INDEX )
+                        indJS = TREC(&INDEX , 1);       /* Filing Status:     1=Single    */
+                        indIF = TREC(&INDEX , 2);       /* Dependency Status: 1=Dependent */
+                        indDX = TREC(&INDEX , 4);       /* Number of Dependent Exemptions */
+                        indAE = TREC(&INDEX , 3);       /* Number of Aged Exempions       */
+                        IF( (indJS = 1) AND ( (TOTINCX/INCOME) GT /*0.25*/0.25 /* JBH - I'm not sure where they got this number. */) )THEN
+                                DO;
+                                        IF( (indIF NE 1) AND (indDX GT 0.) )THEN
+                                                DO;
+                                                        TREC(&INDEX , 1) = 3;
+                                                END;
+                                END;
+                END;
+%MEND HHSTATUS ;
+
+/*
+        SORT THE INPUT FILES
+*/
+*PROC SORT DATA=EXTRACT.HOUSEHLD;
+*BY HID;
+*PROC SORT DATA=EXTRACT.FAMPER;
+*BY HID FID PID;
+/*
+        -----------------------------------------
+        MAIN PROGRAM
+
+        Purpose - Create Extract of CPS Tax Units
+        -----------------------------------------
+*/
+DATA EXTRACT.CPSRETS(KEEP=JS IFDEPT AGEDE DEPNE CAHE AGEH AGES
+                          WSALVAL INTVAL DIVVAL ALMVAL BIL RTMVAL
+                          RNTVAL FIL UCVAL SSVAL INCOME RETURNS WT FILST
+                          ZIFDEP ZNTDEP ZHTOTVAL ZAGEPT ZAGESP ZOLDES
+                          ZYOUNG ZWCVAL ZSOCSE ZSSIVAL ZPAWVAL ZVETVAL
+                          ZCSPVAL ZFINVAL ZDEPIN ZOWNER ZWSALVALPT ZWSALVALSP
+                          WSALVALP WSALVALS AAGEDO AAGEDY
+                          XXOCAH XXOCAWH
+                          XXOODEP XXOPAR XXTOT XAGEX XGESTCEN XGEREG
+                          XSCHB XSCHF XSCHE XSCHC
+                          XHID XFID XPID XPIDS XPID01 XPID02 XPID03 XPID04 XPID05 XPID06 XPID07 XPID08 XPID09 XPID10 XPID11 XPID12 XPID13 XPID14 XPID15
+                          )
+     EXTRACT.CPSNONF(KEEP=JS IFDEPT AGEDE DEPNE CAHE AGEH AGES
+                          WSALVAL INTVAL DIVVAL ALMVAL BIL RTMVAL
+                          RNTVAL FIL UCVAL SSVAL INCOME RETURNS WT FILST
+                          ZIFDEP ZNTDEP ZHTOTVAL ZAGEPT ZAGESP ZOLDES
+                          ZYOUNG ZWCVAL ZSOCSE ZSSIVAL ZPAWVAL ZVETVAL
+                          ZCSPVAL ZFINVAL ZDEPIN ZOWNER ZWSALVALPT ZWSALVALSP
+                          WSALVALP WSALVALS AAGEDO AAGEDY
+                          XXOCAH XXOCAWH
+                          XXOODEP XXOPAR XXTOT XAGEX XGESTCEN XGEREG
+                          XSCHB XSCHF XSCHE XSCHC
+                          XHID XFID XPID XPIDS XPID01 XPID02 XPID03 XPID04 XPID05 XPID06 XPID07 XPID08 XPID09 XPID10 XPID11 XPID12 XPID13 XPID14 XPID15
+                          ) ;
+SET EXTRACT.HOUSEHLD ;
+RETAIN PTR;
+RETAIN ISEED1 87421 ISEED2 73445 ISEED3 12339;
+ARRAY PREC(16 ,  62) _temporary_ ;	/*	NEW CPS FIELDS	*/
+ARRAY TREC(16 , /*150*/115) _temporary_ ; /* Note: I don't need the spaces for the ICPS data, but I do need spaces for dependent IDs. */
+*ARRAY ICPS(*) ICPS01-ICPS50 ;
+IF (_N_ = 1)THEN PTR = 0;
+RETURNS = 1.0;
+NUNITS = 0.0 ;
+%SETPARMS
+/*
+        --------------------------------------------------------------
+        I.) INITIALIZATION PHASE: BEGIN FILLING-UP PERSON ARRAY PREC()
+        --------------------------------------------------------------
+*/
+        DO NPER = 1 TO HNUMPER;
+
+                /*
+                                -----------------
+                                INCREMENT POINTER
+                                -----------------
+                */
+
+                PTR = PTR + 1;
+
+                /*
+                                -------------
+                                READ A RECORD
+                                -------------
+                */
+
+                SET EXTRACT.FAMPER(RENAME= (HID=NEWHID)) POINT=PTR ;
+
+                /*
+                                -----------------------
+                                CHECK THE SORT SEQUENCE
+                                -----------------------
+                */
+
+                IF( HID NE NEWHID )THEN
+                        DO;
+                                PUT '*** ERROR IN SORT SEQUENCE' ;
+                                STOP;
+                        END;
+/*
+                                --------------------
+                                FILL UP PERSON ARRAY
+                                --------------------
+*/
+                        %FILLREC
+        END;
+/*
+                --------------------------------------------------
+                II.) MAIN COMPUTATIONAL PHASE: CONSTRUCT TAX UNITS
+                --------------------------------------------------
+
+  ----> For two types of households, constructing tax units
+        is straightforward:
+
+                (1) Single persons living alone are one tax unit.
+                (2) Individuals living in group quarters get one
+                    tax unit per individual.
+
+        So let's take care of these cases first.
+*/
+        SELECT;
+/*
+                ------------------------------------
+                CASE #1: Single Persons Living Alone
+                ------------------------------------
+*/
+                WHEN( ( (HTYPE = 6) OR (HTYPE = 7) ) AND (HNUMPER = 1) )
+                        DO;
+                                %CREATE( 1 )
+                        END;
+/*
+                -----------------------------------------
+                CASE #2: Persons Living in Group Quarters
+                -----------------------------------------
+*/
+                WHEN(  (HTYPE = 9)  )
+                        DO IPER = 1 TO HNUMPER;
+                                %CREATE( IPER )
+                        END;
+/*
+                ------------------------------------
+                CASE #3: All Other Family Structures
+                ------------------------------------
+*/
+                OTHERWISE
+                        DO;
+                                DO IX = 1 TO HNUMPER ;
+                                /*
+                                -----------------------------
+                                OUTER LOOP - Reference Person
+                                -----------------------------
+                                */
+                                refFID   = PREC(IX ,  2) ;
+                                refFKIND = PREC(IX ,  3) ;
+                                refFTYPE = PREC(IX ,  4) ;
+                                refHHREL = PREC(IX , 16) ;
+                                refFFREL = PREC(IX , 17) ;
+                                refHFREL = PREC(IX , 18) ;
+                                refHFLAG = PREC(IX , 30) ; /* Tax Unit Head Flag      */
+                                refSFLAG = PREC(IX , 31) ; /* Tax Unit Spouse Flag    */
+                                refDFLAG = PREC(IX , 32) ; /* Tax Unit Dependent Flag */
+                                refREL   = PREC(IX , 38) ; /* Relationship Code       */
+                                /*
+                                ---------------------------------------------
+                                Check if this Person has already been taken
+                                ---------------------------------------------
+                                */
+                                IF( (refHFLAG = 0) AND (refSFLAG = 0) AND (refDFLAG = 0) )THEN
+                                        DO;
+                                                %CREATE( IX )
+                                        END;
+                                /*
+                                        ---------------------------------------------
+                                        If this Person is a dependent, check to see if
+                                        they must file a return.
+                                        ---------------------------------------------
+                                */
+                                IF( (refSFLAG = 0) AND (refDFLAG = 1) )THEN
+                                        DO;
+                                                %MUSTFILE( IX , DEPFILE )
+                                                IF( DEPFILE = 1 )THEN
+                                                        DO;
+                                                                %CREATE( IX )
+                                                        END;
+                                        END;
+                                END;
+                                /*
+                                ------------------------------------------
+                                Now check tentative returns for dependency
+                                if household has more than one tax unit.
+                                ------------------------------------------
+                                */
+                                IF( NUNITS GT 1 )THEN
+                                        DO;
+                                                %SEARCH2
+                                        END;
+                        END;
+        END;
+/*
+                -------------------------------------
+                III.) FINAL ALIGNMENT CHECK
+                -------------------------------------
+*/
+                DO NRET = 1 TO NUNITS ;
+                        %HHSTATUS( NRET );
+                END;
+
+/*
+                -------------------------------------
+                IV.) OUTPUT RETURNS
+                -------------------------------------
+*/
+
+%OUTPUT
+
+LABEL JS = 'Filing Status'
+    AGEH = 'Age of Head'
+  INCOME = 'Income Class'
+   AGEDE = 'Aged Status'
+  IFDEPT = 'Dependency Status'
+   DEPNE = 'Presence of Dependents' ;
+RUN;
+/*
+        Make one last pass through both FILER and NON-FILER extracts to
+        assign unique IDs.
+*/
+DATA EXTRACT.CPSNONF;
+SET EXTRACT.CPSNONF;
+CPSSEQ = _N_;
+RUN;
+DATA EXTRACT.CPSRETS;
+SET EXTRACT.CPSRETS;
+CPSSEQ = _N_;
+RUN;
+/*
+                Table 1a. - First Blocking Partitions: Filing Status, Age & Income
+                                (Unweighted) - Non-Filers Only
+*/
+PROC TABULATE DATA=EXTRACT.CPSNONF FORMAT=COMMA12. ;
+WEIGHT WT;
+CLASS JS AGEDE IFDEPT DEPNE ;
+VAR RETURNS ;
+FORMAT JS JS. IFDEPT IFDEPT. DEPNE DEPNE. AGEDE AGEDE.
+FILST FILST.;
+KEYLABEL SUM='AMOUNT' PCTSUM='PERCENT' ALL='Total, All Returns'
+MEAN='AVERAGE' N='Unweighted' PCTN='PERCENT' SUMWGT='Weighted' ;
+TABLE ( (IFDEPT ALL)*(AGEDE ALL) ) , RETURNS*( ((JS*DEPNE ALL) )*(N)  )
+/ PRINTMISS MISSTEXT='n.a.' ;
+TITLE1 'S t a t i s t i c a l  M a t c h i n g  P r o j e c t' ;
+TITLE3 'Preliminary File Alignment' ;
+TITLE5 'Table 1a. - First Blocking Partition: Filing Status, Age & Dependency Status' ;
+TITLE6 'Source: MARCH 2008 Current Population Survey' ;
+TITLE7 '(*** Unweighted ***)' ;
+TITLE8 'Non-Filers' ;
+TITLE9 '----------' ;
+RUN;
+/*
+                Table 1b. - First Blocking Partitions: Filing Status, Age & Income
+                                (Weighted) - Non-Filers Only
+*/
+PROC TABULATE DATA=EXTRACT.CPSNONF FORMAT=COMMA12. ;
+WEIGHT WT;
+CLASS JS AGEDE IFDEPT DEPNE ;
+VAR RETURNS ;
+FORMAT JS JS. IFDEPT IFDEPT. DEPNE DEPNE. AGEDE AGEDE.
+FILST FILST.;
+KEYLABEL SUM='AMOUNT' PCTSUM='PERCENT' ALL='Total, All Returns'
+MEAN='AVERAGE' N='Unweighted' PCTN='PERCENT' SUMWGT='Weighted' ;
+TABLE ( (IFDEPT ALL)*(AGEDE ALL) ) , RETURNS*( ((JS*DEPNE ALL) )*(SUMWGT)  )
+/ PRINTMISS MISSTEXT='n.a.' ;
+TITLE1 'S t a t i s t i c a l  M a t c h i n g  P r o j e c t' ;
+TITLE3 'Preliminary File Alignment' ;
+TITLE5 'Table 1b. - First Blocking Partition: Filing Status, Age & Dependency Status' ;
+TITLE6 'Source: MARCH 2008 Current Population Survey' ;
+TITLE7 '(*** Weighted ***)' ;
+TITLE8 'Non-Filers' ;
+TITLE9 '----------' ;
+RUN;
+/*
+                Table 2a. - First Blocking Partitions: Filing Status, Age & Income
+                                (Unweighted) - Filers Only
+*/
+PROC TABULATE DATA=EXTRACT.CPSRETS FORMAT=COMMA12. ;
+WEIGHT WT;
+CLASS JS AGEDE IFDEPT DEPNE ;
+VAR RETURNS ;
+FORMAT JS JS. IFDEPT IFDEPT. DEPNE DEPNE. AGEDE AGEDE.
+FILST FILST.;
+KEYLABEL SUM='AMOUNT' PCTSUM='PERCENT' ALL='Total, All Returns'
+MEAN='AVERAGE' N='Unweighted' PCTN='PERCENT' SUMWGT='Weighted' ;
+TABLE ( (IFDEPT ALL)*(AGEDE ALL) ) , RETURNS*( ((JS*DEPNE ALL) )*(N)  )
+/ PRINTMISS MISSTEXT='n.a.' ;
+TITLE1 'S t a t i s t i c a l  M a t c h i n g  P r o j e c t' ;
+TITLE3 'Preliminary File Alignment' ;
+TITLE5 'Table 2a. - First Blocking Partition: Filing Status, Age & Dependency Status' ;
+TITLE6 'Source: MARCH 2008 Current Population Survey' ;
+TITLE7 '(*** Unweighted ***)' ;
+TITLE8 'Filers' ;
+TITLE9 '------' ;
+RUN;
+/*
+                Table 2b. - First Blocking Partitions: Filing Status, Age & Income
+                                (Weighted) - Filers Only
+*/
+PROC TABULATE DATA=EXTRACT.CPSRETS FORMAT=COMMA12. ;
+WEIGHT WT;
+CLASS JS AGEDE IFDEPT DEPNE ;
+VAR RETURNS ;
+FORMAT JS JS. IFDEPT IFDEPT. DEPNE DEPNE. AGEDE AGEDE.
+FILST FILST.;
+KEYLABEL SUM='AMOUNT' PCTSUM='PERCENT' ALL='Total, All Returns'
+MEAN='AVERAGE' N='Unweighted' PCTN='PERCENT' SUMWGT='Weighted' ;
+TABLE ( (IFDEPT ALL)*(AGEDE ALL) ) , RETURNS*( ((JS*DEPNE ALL) )*(SUMWGT)  )
+/ PRINTMISS MISSTEXT='n.a.' ;
+TITLE1 'S t a t i s t i c a l  M a t c h i n g  P r o j e c t' ;
+TITLE3 'Preliminary File Alignment' ;
+TITLE5 'Table 2b. - First Blocking Partition: Filing Status, Age & Dependency Status' ;
+TITLE6 'Source: MARCH 2008 Current Population Survey' ;
+TITLE7 '(*** Weighted ***)' ;
+TITLE8 'Filers' ;
+TITLE9 '------' ;
+RUN;
+/*
+				NON-FILER ANALYSIS - ADDED NOVEMBER 2009 BY OHARE
+*/
+DATA WORK.ANALYSISCPSNONF(KEEP=PEOPLE WT);
+SET EXTRACT.CPSNONF;
+*****
+	Total Population on the file (PEOPLE) is calculated as:
+		1. Two if joint return (adjusted for MFS). One otherwise.
+		2. Plus number of dependent exemptions.
+		3. Calculated for non-dependent filers.
+*****;
+DMFS = 1.0;	/*	NO MFS INDICATOR ON CPS	*/
+PEOPLE = 0.0;
+IF( IFDEPT NE 1. )THEN
+	DO;
+		PEOPLE = 1.;
+		IF( JS EQ 2. )THEN PEOPLE = 2.*DMFS;
+		PEOPLE = PEOPLE + DEPNE;
+	END;
+RUN;
+PROC MEANS N MIN MAX MEAN SUM DATA=WORK.ANALYSISCPSNONF;
+WEIGHT WT;
+VAR PEOPLE;
+TITLE1 'Non-Filer Analysis';
+TITLE2 'March 2008 Current Population Survey';
+TITLE3 'Population Estimates for Non-Filer Tax Units';
+RUN;
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 3. Prepare tax returns and related information from SOI data.   */
+%LET _CLIENTTASKLABEL='3. Prepare tax returns and related information from SOI data.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+*OPTIONS PAGESIZE=84 LINESIZE=111; /* PORTRAIT  */
+OPTIONS PAGESIZE=59 LINESIZE=160 CENTER ; /* LANDSCAPE */
+/*
+    =======================================
+
+           PricewaterhouseCoopers
+
+        STATISTICAL MATCHING PROJECT
+
+        March 2008 CPS  <-> 2007 Public Use File (SOI)
+
+
+
+
+    Program SOIRETS: Create a Composite Extract
+                     from the SOI 2007 PUBLIC
+                     USE FILE.
+	10-14-09.	Fixed a problem with the AGEDE
+				indicator (2007 Social Security Amounts).
+    =======================================
+
+*/
+
+PROC FORMAT;
+        VALUE JS 1 = 'Single Returns'
+                 2 = 'Joint Returns'
+                 3 = 'Head of Household' ;
+        VALUE AGEP LOW  -  24 = 'Under 25'
+                    25  -  34 = '25 lt 35'
+                    35  -  44 = '35 lt 45'
+                    45  -  54 = '45 lt 55'
+                    55  -  64 = '55 lt 65'
+                    65  - HIGH = '65 and Over' ;
+        VALUE JY LOW        -       10000 =  'LESS THAN $10,000'
+                 10000      -       20000 =  '$10,000 TO $20,000'
+                 20000      -       30000 =  '$20,000 TO $30,000'
+                 30000      -       40000 =  '$30,000 TO $40,000'
+                 40000      -       50000 =  '$40,000 TO $50,000'
+                 50000      -       75000 =  '$50,000 TO $75,000'
+                 75000      -      100000 =  '$75,000 TO $100,000'
+                100000      -      200000 =  '$100,000 TO $200,000'
+                200000      -        HIGH =  '$200,000 AND OVER' ;
+        VALUE AGEDE LOW -    0 = 'Non-Aged Return'
+                      1 - HIGH = 'Aged Return' ;
+        VALUE IFDEPT         0 = 'Non-Dependent Filer'
+                             1 = 'Dependent Filer' ;
+        VALUE DEPNE LOW -    0 = 'No Dependents'
+                      1 - HIGH = 'With Dependents' ;
+
+DATA EXTRACT.SOIRETS(KEEP=JS IFDEPT CAHE CAFHE OTHDEP DEPNE
+                          AGEP AGES AGEDE WSALVAL WSALVALP WSALVALS
+                          INTVAL TEXINT DIVVAL ALMVAL BIL RTMVAL
+                          PTPEN SCHE FIL UCAGIX SSVAL SSVALP SSVALS
+                          SSAGIX TOTINCX AGIX TINCX RETURNS
+                          AAGEDO AAGEDY AGEPSQR XAGEDE XIFDEPT XDEPNE
+                          INCOME RETID SEQUENCE SOISEQ WT FILER) ;
+SET SOIDATA.PUF_2007;
+ARRAY C(*) C1-C33 ;
+ARRAY F(*) F1-F176 ;
+/*
+        CREATE VARIABLES FROM INPUT FILE
+*/
+/* JBH begin */
+WT = S006 / 100;
+/* JBH end */
+/*
+        1.)     Filing Status
+*/
+FILER = 1 ;
+DMFS = 1.0 ;
+JS = 2;
+**MARS = C15 ;
+IF( MARS = 1 )THEN JS = 1 ;
+IF( (MARS = 4) )THEN JS = 3 ;
+IF( (MARS = 3) OR (MARS = 6) )THEN DMFS = 0.5 ;
+/*
+        2.)     Return ID
+*/
+        RETID = /*F171*/RECID ;
+		SEQUENCE = _N_ ;
+		SOISEQ = _N_ ;
+/*
+        3.)     Exemptions
+*/
+IFDEPT = /*C2*/DSI ;
+CAHE = /*C29*/XOCAH ;
+CAFHE = /*C30*/XOCAWH ;
+OTHDEP = /*C31*/XOODEP ;
+OTHPAR = /*C32*/XOPAR ;
+DEPNE = CAHE + CAFHE + OTHDEP + OTHPAR ;
+AGEP = . ;
+AGES = . ;
+/*
+      ---------------------
+       CALCULATE AGED EXEMPTIONS
+
+
+       NOTE: WE ONLY DO THIS
+       FOR NON-DEPENDENTS CLAIMING THE
+       STANDARD DEDUCTION. THE VALUE OF
+       AGEXD = (0,1,2,3) /SKIP BLIND
+      ---------------------
+*/
+      AGEX = 0 ;
+      IF( ( /*C( 2 )*/DSI EQ 0 ) AND ( /*C( 6 )*/FDED EQ 2 ) )THEN
+      DO;
+            IF( MARS EQ 1 )THEN
+            DO;
+                  IF( /*F( 32 )*/P04470 EQ /*6050*/6650.D0 ) THEN AGEX = 1 ;
+                  IF( /*F( 32 )*/P04470 EQ /*7250*/7950.D0 ) THEN AGEX = 2 ;
+            END;
+
+            IF( (MARS EQ 2) OR (MARS EQ 5) )THEN
+            DO;
+                  IF( /*F( 32 )*/P04470 EQ /*10650*/11750.D0 ) THEN AGEX = 1 ;
+                  IF( /*F( 32 )*/P04470 EQ /*11600*/12800.D0 ) THEN AGEX = 2 ;
+                  IF( /*F( 32 )*/P04470 EQ /*12550*/13850.D0 ) THEN AGEX = 3 ;
+                  IF( /*F( 32 )*/P04470 EQ /*13500*/14900.D0 ) THEN AGEX = 3 ;
+            END;
+
+            IF( MARS EQ 3 )THEN
+            DO;
+                  IF( /*F( 32 )*/P04470 EQ /*5800*/6400.D0 ) THEN AGEX = 1 ;
+                  IF( /*F( 32 )*/P04470 EQ /*6750*/7450.D0 ) THEN AGEX = 2 ;
+                  IF( /*F( 32 )*/P04470 EQ /*7700*/7700.D0 ) THEN AGEX = 3 ;
+                  IF( /*F( 32 )*/P04470 EQ /*8650*/8650.D0 ) THEN AGEX = 3 ;
+            END;
+
+            IF( MARS EQ 4 )THEN
+            DO;
+                  IF( /*F( 32 )*/P04470 EQ /*8350*/9150.D0 ) THEN AGEX = 1 ;
+                  IF( /*F( 32 )*/P04470 EQ /*9550*/10450.D0 ) THEN AGEX = 2 ;
+            END;
+
+      END;
+      ELSE
+            DO;
+					/*	Gross Social Security Benefits	*/
+                  IF( /*F( 19 )*/E02400 NE 0. )THEN AGEX = 1;
+				  IF( (MARS = 2) AND (/*F( 19 )*/E02400 GT /*1825.*/2116.*12.) )THEN AGEX = 2.; /*$1,825 was the maximum monthly SS benefit in 2004. $2,116 is the corresponding figure for 2007. */
+            END;
+AGEDE = AGEX ;
+/*
+        4.)     Income Items
+*/
+WSALVAL = /*F1*/E00200 ;
+WSALVALP = . ;
+WSALVALS = . ;
+INTVAL = /*F2*/E00300 ;
+TEXINT = /*F3*/E00400 ;
+DIVVAL = /*F4*/E00600 ;
+ALMVAL = /*F7*/E00800 ;
+BIL = /*F8*/E00900 ;
+RTMVAL = /*F14*/E01500 ;
+PTPEN = /*F15*/E01700 ;
+SCHE = /*F16*/E02000 ;
+FIL = /*F17*/E02100 ;
+UCAGIX = /*F18*/E02300 ;
+SSVAL = /*F19*/E02400 ;
+SSVALP = . ;
+SSVALS = . ;
+SSAGIX = /*F20*/E02500 ;
+AGIX = /*F31*/E00100 ;
+TINCX = /*F34*/E04800 ;
+RETURNS = 1.0 ;
+AAGEDO = . ;
+AAGEDY = . ;
+AGEPSQR = . ;
+ADJUST = /*F21*/E03150 + /*F22*/E03210 + /*F23*/E03220 + /*F24*/E03230
+       + /*F25*/E03260 + /*F26*/E03270 + /*F27*/E03290 + /*F28*/E03300 + /*F29*/E03400 + /*F30*/E03500 ;
+TOTINCX = AGIX + ADJUST ;
+XIFDEPT = IFDEPT ;
+XDEPNE = DEPNE ;
+XAGEDE = AGEDE ;
+INCOME = TOTINCX ;
+LABEL JS = 'Filing Status'
+    AGEP = 'Age of Head'
+ TOTINCX = 'Total Income'
+  INCOME = 'Income Class'
+   TINCX = 'Taxable Income'
+  AAGEDO = 'Age of Oldest Child'
+AAGEDY = 'Age of Youngest Child'
+ XIFDEPT = 'Dependency Status'
+  XDEPNE = 'Presence of Dependents'
+  XAGEDE = 'Aged Status' ;
+RUN;
+
+PROC SORT DATA=EXTRACT.SOIRETS;BY SOISEQ;
+/*
+                Table 1a. - First Blocking Partitions: Filing Status, Age & Income
+                                (Unweighted) - Filers Only
+*/
+PROC TABULATE DATA=EXTRACT.SOIRETS FORMAT=COMMA12. ;
+WEIGHT WT;
+CLASS JS XAGEDE XIFDEPT XDEPNE ;
+VAR RETURNS ;
+FORMAT JS JS. XIFDEPT IFDEPT. XDEPNE DEPNE. XAGEDE AGEDE. ;
+KEYLABEL SUM='AMOUNT' PCTSUM='PERCENT' ALL='Total, All Returns'
+MEAN='AVERAGE' N='Unweighted' PCTN='PERCENT' SUMWGT='Weighted' ;
+TABLE ( (XIFDEPT ALL)*(XAGEDE ALL) ) , RETURNS*( ((JS*XDEPNE ALL) )*(N)  )
+/ PRINTMISS MISSTEXT='n.a.' ;
+TITLE1 'S t a t i s t i c a l  M a t c h i n g  P r o j e c t' ;
+TITLE3 'Preliminary File Alignment' ;
+TITLE5 'Table 1a. - First Blocking Partition: Filing Status, Age & Dependency Status' ;
+TITLE6 'Source: 2007 Individual Statistics of Income - Public Use File' ;
+TITLE7 '(*** Unweighted ***)' ;
+TITLE8 'Filers' ;
+TITLE9 '------' ;
+RUN;
+/*
+                Table 1b. - First Blocking Partitions: Filing Status, Age & Income
+                                (Weighted) - Filers Only
+*/
+PROC TABULATE DATA=EXTRACT.SOIRETS FORMAT=COMMA12. ;
+WEIGHT WT;
+CLASS JS XAGEDE XIFDEPT XDEPNE ;
+VAR RETURNS ;
+FORMAT JS JS. XIFDEPT IFDEPT. XDEPNE DEPNE. XAGEDE AGEDE. ;
+KEYLABEL SUM='AMOUNT' PCTSUM='PERCENT' ALL='Total, All Returns'
+MEAN='AVERAGE' N='Unweighted' PCTN='PERCENT' SUMWGT='Weighted' ;
+TABLE ( (XIFDEPT ALL)*(XAGEDE ALL) ) , RETURNS*( ((JS*XDEPNE ALL) )*(SUMWGT)  )
+/ PRINTMISS MISSTEXT='n.a.' ;
+TITLE1 'S t a t i s t i c a l  M a t c h i n g  P r o j e c t' ;
+TITLE3 'Preliminary File Alignment' ;
+TITLE5 'Table 1b. - First Blocking Partition: Filing Status, Age & Dependency Status' ;
+TITLE6 'Source: 2007 Individual Statistics of Income - Public Use File' ;
+TITLE7 '(*** Weighted ***)' ;
+TITLE8 'Filers' ;
+TITLE9 '------' ;
+RUN;
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 4. Partition data and fit regression model.   */
+%LET _CLIENTTASKLABEL='4. Partition data and fit regression model.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+*OPTIONS PAGESIZE=84 LINESIZE=111; /* PORTRAIT  */
+OPTIONS PAGESIZE=59 LINESIZE=160 CENTER ; /* LANDSCAPE */
+/*
+    =======================================
+           PricewaterhouseCoopers
+
+        STATISTICAL MATCHING PROJECT
+
+    March 2008 CPS  <-> 2007 Public Use File (SOI)
+
+
+
+    Program PHASE-1 :File Partitioning and
+                     and Predictive Mean
+                     Estimation.
+    =======================================
+*/
+
+PROC FORMAT;
+        VALUE IJS 1 = 'Single Returns'
+                  2 = 'Joint Returns'
+                  3 = 'Head of Household' ;
+        VALUE IAGEDE 1 = 'Non-Aged Return'
+                     2 = 'Aged Return' ;
+        VALUE IDEPT 1 = 'Non-Dependent Filer'
+                    2 = 'Dependent Filer' ;
+        VALUE IDEPNE 0 = 'No Dependents'
+                     1 = '1 Dependent'
+                     2 = '2 Dependents'
+                     3 = '3 Dependents'
+                     4 = '4 Dependents'
+                     5 = '5+ Dependents' ;
+        VALUE FILST          0 = 'Non-Filers'
+                             1 = 'Filers' ;
+        VALUE IKIDS 1 = 'One Dependent '
+                    2 = 'Two Dependents'
+                    3 = 'Three or More Dependents' ;
+        VALUE ISELF 1 = 'Only Wage Income (or no earnings)'
+                    2 = 'Only Self-Employment Income'
+                    3 = 'Both Wage and Self-Employment' ;
+RUN;
+
+/*
+        Create WORK.CPSFILE
+*/
+DATA WORK.CPSFILE;
+SET EXTRACT.CPSRETS;
+/*
+        ----------------------------------------------------
+        BEGIN PARTITIONING PHASE
+        ----------------------------------------------------
+*/
+IDEPT = 9 ;
+IJS   = 9 ;
+IAGEDE= 9 ;
+IDEPNE= 9 ;
+IKIDS = 9 ;
+ISELF = 9 ;
+/*
+        ---------------------
+        SELF-EMPLOYMENT
+        ---------------------
+*/
+SELFEMPL = 1.;
+WAGEFLAG = 0.;IF( WSALVAL NE 0. )THEN WAGEFLAG = 1.;
+SELFFLAG = 0.;IF( (BIL + FIL) NE 0. )THEN SELFFLAG = 1.;
+IF( (WAGEFLAG = 1) AND (SELFFLAG = 0) )THEN SELFEMPL = 1.;
+IF( (WAGEFLAG = 0) AND (SELFFLAG = 1) )THEN SELFEMPL = 2.;
+IF( (WAGEFLAG = 1) AND (SELFFLAG = 1) )THEN SELFEMPL = 3.;
+/*
+        ---------------------
+        POPULATION CHECK
+        ---------------------
+*/
+PEOPLE = 1.;
+IF( JS = 2 )THEN PEOPLE = 2.;
+PEOPLE = PEOPLE + DEPNE ;
+IF( IFDEPT = 1 )THEN PEOPLE = . ;
+/*
+        ----------------------------
+        (1)     DEPENDENT FILERS
+        ----------------------------
+*/
+IDEPT  = 1. ;IF( IFDEPT = 1 )THEN IDEPT = 2.;
+/*
+        ----------------------------
+        (2)     NON-DEPENDENT FILERS
+        ----------------------------
+*/
+IF( IDEPT = 1. )THEN
+        DO;
+                IJS    = JS ;
+                IAGEDE = 1. ;IF( AGEDE GT 0 )THEN IAGEDE = 2.;
+                IF( AGEDE = 0 )THEN
+                        DO;
+                                IF( JS NE 2 )THEN
+                                        IDEPNE = MIN(DEPNE , 3) ;
+                                ELSE
+                                        IDEPNE = MIN(DEPNE , 5) ;
+                        END;
+        END;
+/*
+        -----------------------------
+        (3)     Independent Variables
+        -----------------------------
+*/
+SCHE = RNTVAL;
+UCAGIX = UCVAL ;
+TEXINT = 0.0;
+TPI = WSALVAL + INTVAL + TEXINT + DIVVAL + MAX(0., SCHE) + MAX(0., BIL)
+    + MAX(0., FIL) + SSVAL + RTMVAL + ALMVAL + UCAGIX ;
+WAGESHR = 0.0 ;
+CAPSHR = 0.0 ;
+IF( TPI NE 0.0 )THEN
+        DO;
+                WAGESHR = WSALVAL / TPI ;
+                CAPSHR  = (INTVAL + TEXINT + DIVVAL) / TPI ;
+        END;
+RUN;
+/*
+        Create WORK.SOIFILE
+*/
+DATA WORK.SOIFILE;
+SET EXTRACT.SOIRETS;
+/*
+        ----------------------------------------------------
+        BEGIN PARTITIONING PHASE
+        ----------------------------------------------------
+*/
+IDEPT = 9 ;
+IJS   = 9 ;
+IAGEDE= 9 ;
+IDEPNE= 9 ;
+IKIDS = 9 ;
+ISELF = 9 ;
+/*
+        ---------------------
+        SELF-EMPLOYMENT
+        ---------------------
+*/
+SELFEMPL = 1.;
+WAGEFLAG = 0.;IF( WSALVAL NE 0. )THEN WAGEFLAG = 1.;
+SELFFLAG = 0.;IF( (BIL + FIL) NE 0. )THEN SELFFLAG = 1.;
+IF( (WAGEFLAG = 1) AND (SELFFLAG = 0) )THEN SELFEMPL = 1.;
+IF( (WAGEFLAG = 0) AND (SELFFLAG = 1) )THEN SELFEMPL = 2.;
+IF( (WAGEFLAG = 1) AND (SELFFLAG = 1) )THEN SELFEMPL = 3.;
+/*
+        ---------------------
+        POPULATION CHECK
+        ---------------------
+*/
+PEOPLE = 1.;
+IF( JS = 2 )THEN PEOPLE = 2.;
+PEOPLE = PEOPLE + DEPNE ;
+IF( IFDEPT = 1 )THEN PEOPLE = . ;
+/*
+        ----------------------------
+        (1)     DEPENDENT FILERS
+        ----------------------------
+*/
+IDEPT  = 1. ;IF( IFDEPT = 1 )THEN IDEPT = 2.;
+/*
+        ----------------------------
+        (2)     NON-DEPENDENT FILERS
+        ----------------------------
+*/
+IF( IDEPT = 1. )THEN
+        DO;
+                IJS    = JS ;
+                IAGEDE = 1. ;IF( AGEDE GT 0 )THEN IAGEDE = 2.;
+                IF( AGEDE = 0 )THEN
+                        DO;
+                                IF( JS NE 2 )THEN
+                                        IDEPNE = MIN(DEPNE , 3)  ;
+                                ELSE
+                                        IDEPNE = MIN(DEPNE , 5)  ;
+                        END;
+        END;
+/*
+        -----------------------------
+        (3)     Independent Variables
+        -----------------------------
+*/
+TPI = WSALVAL + INTVAL + TEXINT + DIVVAL + MAX(0., SCHE) + MAX(0., BIL)
+    + MAX(0., FIL) + SSVAL + RTMVAL + ALMVAL + UCAGIX ;
+WAGESHR = 0.0 ;
+CAPSHR = 0.0 ;
+IF( TPI NE 0.0 )THEN
+        DO;
+                WAGESHR = WSALVAL / TPI ;
+                CAPSHR  = (INTVAL + TEXINT + DIVVAL) / TPI ;
+        END;
+RUN;
+/*
+        ----------------------
+        DATA FILE SUMMARY
+        ----------------------
+*/
+PROC MEANS DATA=WORK.SOIFILE N SUM SUMWGT;
+WEIGHT WT;
+VAR PEOPLE;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'Population Count - SOI' ;
+RUN;
+PROC MEANS DATA=WORK.CPSFILE N SUM SUMWGT;
+WEIGHT WT;
+VAR PEOPLE;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'Population Count - CPS' ;
+RUN;
+
+/*
+        SORT BOTH FILES
+*/
+PROC SORT DATA=WORK.CPSFILE;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+PROC SORT DATA=WORK.SOIFILE;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+/*
+        ----------------------
+        FILE SUMMARY - UNWEIGHTED
+        ----------------------
+*/
+PROC FREQ DATA=WORK.SOIFILE;
+TABLES IDEPT*IJS*IAGEDE*IDEPNE*IKIDS*ISELF /OUT=WORK.SOICOUNT NOPRINT SPARSE;
+FORMAT IDEPT IDEPT. IJS IJS. IAGEDE IAGEDE. IDEPNE IDEPNE.
+IKIDS IKIDS. ISELF ISELF.;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'Host File is SOI' ;
+RUN;
+PROC FREQ DATA=WORK.CPSFILE;
+TABLES IDEPT*IJS*IAGEDE*IDEPNE*IKIDS*ISELF /OUT=WORK.CPSCOUNT NOPRINT SPARSE;
+FORMAT IDEPT IDEPT. IJS IJS. IAGEDE IAGEDE. IDEPNE IDEPNE.
+IKIDS IKIDS. ISELF ISELF. ;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'Donor File is CPS' ;
+RUN;
+/*
+        ----------------------
+        FILE SUMMARY - WEIGHTED
+        ----------------------
+*/
+PROC FREQ DATA=WORK.SOIFILE;
+WEIGHT WT;
+TABLES IDEPT*IJS*IAGEDE*IDEPNE*IKIDS*ISELF /OUT=WORK.SOIWGT NOPRINT SPARSE;
+FORMAT IDEPT IDEPT. IJS IJS. IAGEDE IAGEDE. IDEPNE IDEPNE.
+IKIDS IKIDS. ISELF ISELF.;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'Host File is SOI' ;
+RUN;
+PROC FREQ DATA=WORK.CPSFILE;
+WEIGHT WT;
+TABLES IDEPT*IJS*IAGEDE*IDEPNE*IKIDS*ISELF /OUT=WORK.CPSWGT NOPRINT SPARSE;
+FORMAT IDEPT IDEPT. IJS IJS. IAGEDE IAGEDE. IDEPNE IDEPNE.
+IKIDS IKIDS. ISELF ISELF. ;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'Donor File is CPS' ;
+RUN;
+/*
+        ----------------------
+        MERGE THE FREQUENCIES
+        ----------------------
+*/
+PROC SORT DATA=WORK.SOICOUNT;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+PROC SORT DATA=WORK.CPSCOUNT;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+PROC SORT DATA=WORK.SOIWGT;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+PROC SORT DATA=WORK.CPSWGT;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+DATA EXTRACT.COUNTS;
+MERGE WORK.SOICOUNT(RENAME=(COUNT=SOICOUNT))
+      WORK.CPSCOUNT(RENAME=(COUNT=CPSCOUNT))
+      WORK.SOIWGT(RENAME=(COUNT=SOIWGT))
+      WORK.CPSWGT(RENAME=(COUNT=CPSWGT)) ;
+BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+IF( (SOICOUNT GT 0.0) AND (CPSCOUNT GT 0.0) );
+FACTOR = 0.0 ;
+IF( CPSWGT GT 0.0 )THEN FACTOR = SOIWGT / CPSWGT ;
+DROP PERCENT;
+RUN;
+/*
+                -----------------------
+                ATTACH CELLID TO COUNTS
+                -----------------------
+*/
+DATA EXTRACT.COUNTS;
+SET EXTRACT.COUNTS;
+CELLID = _N_;
+RUN;
+PROC PRINT DATA=EXTRACT.COUNTS;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'Donor File is CPS' ;
+Title4 'First Partitioning Scheme' ;
+RUN;
+/*
+        ----------------------
+        PREDICTION
+        ----------------------
+*/
+PROC REG DATA=WORK.SOIFILE OUTEST=EXTRACT.BETA;
+WEIGHT WT;
+BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+MODEL TINCX = AGEDE WSALVAL INTVAL DIVVAL
+              BIL FIL SCHE RTMVAL SSVAL UCAGIX
+              ALMVAL WAGESHR CAPSHR
+              WAGEFLAG SELFFLAG ;
+TITLE1 'Statistical Matching Project' ;
+TITLE2 'Predictive Mean Matching - Estimation' ;
+TITLE3 '2007 Statistics of Income - Public Use File' ;
+QUIT;
+RUN;
+/*
+        ----------------------
+        PRINT RESULTS
+        ----------------------
+*/
+PROC PRINT DATA=EXTRACT.BETA;
+TITLE1 'Statistical Matching Project' ;
+TITLE2 'Predictive Mean Matching - Estimation' ;
+TITLE3 '2008 Statistics of Income - Public Use File' ;
+RUN;
+/*
+        ----------------------
+        COEFFICIENT FILE
+        ----------------------
+*/
+DATA WORK.BETA(KEEP=B00 B01 B02 B03 B04 B05
+               B06 B07 B08 B09 B10 B11
+               B12 B13 B14 B15
+               IDEPT IJS IAGEDE IDEPNE IKIDS ISELF) ;
+SET EXTRACT.BETA;
+B00 = INTERCEPT ;
+B01 = AGEDE ;
+B02 = WSALVAL ;
+B03 = INTVAL ;
+B04 = DIVVAL ;
+B05 = BIL ;
+B06 = FIL ;
+B07 = SCHE ;
+B08 = RTMVAL ;
+B09 = SSVAL ;
+B10 = UCAGIX ;
+B11 = ALMVAL ;
+B12 = WAGESHR ;
+B13 = CAPSHR ;
+B14 = WAGEFLAG ;
+B15 = SELFFLAG ;
+RUN;
+
+
+PROC SORT DATA=WORK.BETA;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+PROC SORT DATA=EXTRACT.COUNTS;BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+/*
+        ----------------------
+        MERGE
+        ----------------------
+*/
+DATA WORK.SOIFILE(KEEP=SOISEQ YHAT CELLID);
+MERGE WORK.SOIFILE WORK.BETA EXTRACT.COUNTS;
+BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+/*
+        ----------------------
+        Predicted Mean
+        ----------------------
+*/
+YHAT    = B00
+        + B01 * AGEDE
+        + B02 * WSALVAL
+        + B03 * INTVAL
+        + B04 * DIVVAL
+        + B05 * BIL
+        + B06 * FIL
+        + B07 * SCHE
+        + B08 * RTMVAL
+        + B09 * SSVAL
+        + B10 * UCAGIX
+        + B11 * ALMVAL
+        + B12 * WAGESHR
+        + B13 * CAPSHR
+        + B14 * WAGEFLAG
+        + B15 * SELFFLAG ;
+
+LABEL YHAT = 'Predicted Value (TINCX)' ;
+RUN;
+DATA WORK.CPSFILE(KEEP=CPSSEQ YHAT CELLID);
+MERGE WORK.CPSFILE WORK.BETA EXTRACT.COUNTS;
+BY IDEPT IJS IAGEDE IDEPNE IKIDS ISELF;
+/*
+        ----------------------
+        Predicted Mean
+        ----------------------
+*/
+YHAT    = B00
+        + B01 * AGEDE
+        + B02 * WSALVAL
+        + B03 * INTVAL
+        + B04 * DIVVAL
+        + B05 * BIL
+        + B06 * FIL
+        + B07 * SCHE
+        + B08 * RTMVAL
+        + B09 * SSVAL
+        + B10 * UCAGIX
+        + B11 * ALMVAL
+        + B12 * WAGESHR
+        + B13 * CAPSHR
+        + B14 * WAGEFLAG
+        + B15 * SELFFLAG ;
+
+LABEL YHAT = 'Predicted Value (TINCX)' ;
+RUN;
+/*
+        --------------------------------------------
+        MERGE Predicted Value & CELLID
+                Back to Original Files
+        --------------------------------------------
+*/
+/*PROC SORT DATA=EXTRACT.CPSRETS;BY CPSSEQ;*/
+PROC SORT DATA=WORK.CPSFILE;BY CPSSEQ;
+/*PROC SORT DATA=EXTRACT.SOIRETS;BY SOISEQ;*/
+PROC SORT DATA=WORK.SOIFILE;BY SOISEQ;
+/*
+        CPSFILE
+*/
+DATA EXTRACT.CPSRETS2;
+MERGE EXTRACT.CPSRETS WORK.CPSFILE;
+BY CPSSEQ;
+RUN;
+/*
+        SOIFILE
+*/
+DATA EXTRACT.SOIRETS2;
+MERGE EXTRACT.SOIRETS WORK.SOIFILE;
+BY SOISEQ;
+RUN;
+/*
+        ----------------------
+        DATA FILE SUMMARY
+        ----------------------
+*/
+PROC MEANS DATA=EXTRACT.SOIRETS2 N SUM SUMWGT;
+WEIGHT WT;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 '2007 SOI Public Use File Extract' ;
+RUN;
+PROC MEANS DATA=EXTRACT.CPSRETS2 N SUM SUMWGT;
+WEIGHT WT;
+Title1 'Statistical Matching Project' ;
+Title2 'Partitioning & Predictive Mean Estimation' ;
+Title3 'March 2008 CPS Tax Unit Extract: FILERS Only' ;
+RUN;
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 5. Match CPS (donor) data to the SOI (host) data based on the regression.   */
+%LET _CLIENTTASKLABEL='5. Match CPS (donor) data to the SOI (host) data based on the regression.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+/*
+    =======================================
+
+			PricewaterhouseCoopers
+
+        STATISTICAL MATCHING PROJECT
+
+    March 2008 CPS  <-> 2007 Public Use File (SOI)
+
+
+	Program PHASE-2 :Perform the Match
+                     and Evaluate the CPS
+                     Variables.
+    =======================================
+*/
+
+PROC FORMAT;
+        VALUE IJS 1 = 'Single Returns'
+                  2 = 'Joint Returns'
+                  3 = 'Head of Household' ;
+        VALUE IAGEDE 1 = 'Non-Aged Return'
+                     2 = 'Aged Return' ;
+        VALUE IDEPT 1 = 'Non-Dependent Filer'
+                    2 = 'Dependent Filer' ;
+        VALUE IDEPNE 0 = 'No Dependents'
+                     1 = '1 Dependent'
+                     2 = '2 Dependents'
+                     3 = '3 Dependents'
+                     4 = '4 Dependents'
+                     5 = '5+ Dependents' ;
+        VALUE FILST          0 = 'Non-Filers'
+                             1 = 'Filers' ;
+        VALUE IKIDS 1 = 'One Dependent '
+                    2 = 'Two Dependents'
+                    3 = 'Three or More Dependents' ;
+        VALUE ISELF 1 = 'Only Wage Income (or no earnings)'
+                    2 = 'Only Self-Employment Income'
+                    3 = 'Both Wage and Self-Employment' ;
+RUN;
+
+/*
+        -------------
+        MACRO SECTION
+        -------------
+*/
+%MACRO FILLAX ;
+                AX(NRECA , 1)  = YHAT ;
+                AX(NRECA , 2)  = SOISEQ ;
+                AX(NRECA , 3)  = WT;
+%MEND  FILLAX ;
+
+%MACRO FILLBX ;
+                BX(NRECB , 1)  = YHAT ;
+                BX(NRECB , 2)  = CPSSEQ ;
+                BX(NRECB , 3)  = WT;
+%MEND  FILLBX ;
+
+/*
+        --------------------------------------------------------
+        CREATE WORKING FILES
+        --------------------------------------------------------
+*/
+DATA WORK.SOIFILE(KEEP=CELLID YHAT SOISEQ WT) ;
+SET EXTRACT.SOIRETS2;
+RUN;
+
+DATA WORK.CPSFILE(KEEP=CELLID YHAT CPSSEQ WT) ;
+SET EXTRACT.CPSRETS2;
+RUN;
+
+
+/*
+        --------------------------------------------------------
+        PREDICTIVE MEAN MATCHING ALGORITHM
+
+        This program performs a constrained statistical match
+        using the predictive mean matching algorithm for each
+        of the partitions defined for the run. The main file
+        that is processed is a file of COUNTS for each of the
+        partitions. Records are read into arrays AX() and BX()
+        to hold record for the SOI and CPS, respectively.
+        --------------------------------------------------------
+*/
+/*
+                ------------------------------------------------
+                NOTE: Sort Order - CELLID, OWNER, ZHAT1
+                ------------------------------------------------
+*/
+PROC SORT DATA=WORK.SOIFILE;BY CELLID YHAT;
+RUN;
+PROC SORT DATA=WORK.CPSFILE;BY CELLID YHAT;
+RUN;
+
+DATA EXTRACT.MATCH(KEEP=SOISEQ CPSSEQ MATCHWEIGHT);
+SET EXTRACT.COUNTS;
+RETAIN PTRA PTRB;
+ARRAY AX(32000 , 3) _temporary_ ;
+ARRAY BX(32000 , 3) _temporary_ ;
+/*
+        ------------------------------
+        INITIALIZE POINTERS & WEIGHT TOTALS
+        ------------------------------
+*/
+IF (_N_ = 1)THEN
+        DO;
+                PTRA = 0.0 ;
+                PTRB = 0.0 ;
+        END;
+WTA = 0.0 ;
+WTB = 0.0 ;
+/*
+        ------------------------------
+        FILL UP AX() & BX() ARRAYS
+
+        NOTE: SOI IS HOST  (FILE A)
+              CPS IS DONOR (FILE B)
+        ------------------------------
+*/
+        DO NRECA = 1 TO SOICOUNT;
+                PTRA = PTRA + 1;
+                SET WORK.SOIFILE POINT=PTRA ;
+                %FILLAX
+                WTA = WTA + AX(NRECA , 3) ;
+        END;
+
+        DO NRECB = 1 TO CPSCOUNT;
+                PTRB = PTRB + 1;
+                SET WORK.CPSFILE POINT=PTRB ;
+                %FILLBX
+                WTB = WTB + BX(NRECB , 3) ;
+        END;
+
+/*
+        ------------------------------
+        SCALE RECORDS ON FILE B
+        ------------------------------
+*/
+FACTOR = 1.0 ;
+IF( WTB GT 0.0 )THEN FACTOR = WTA / WTB ;
+ELSE
+        DO;
+                PUT '*** ERROR: EMPTY CELL' ;
+                STOP;
+        END;
+
+        DO NB = 1 TO CPSCOUNT ;
+                BX(NB , 3) = BX(NB , 3) * FACTOR ;
+        END;
+/*
+        -------------------------------
+        PERFORM THE MATCH
+        -------------------------------
+*/
+EPSILON = 0.001 ;
+BPTR = 1.;
+BWT = BX(BPTR , 3) ;
+DO NRECA = 1 TO SOICOUNT ;
+        AWT = AX(NRECA , 3) ;
+        DO WHILE ( AWT GT EPSILON ) ;
+                CWT = MIN(AWT , BWT) ;
+                SOISEQ = AX(NRECA , 2) ;
+                CPSSEQ = BX(BPTR , 2) ;
+                MATCHWEIGHT  = CWT ;
+                OUTPUT;
+                AWT = MAX(0. , AWT - CWT) ;
+                BWT = MAX(0. , BWT - CWT) ;
+                /*
+                        -------------------------
+                        CHECK IF DONOR WEIGHT > 0.0
+                        -------------------------
+                */
+                IF( BWT LE EPSILON )THEN
+                        DO;
+                                IF( BPTR LT CPSCOUNT )THEN
+                                        DO;
+                                                BPTR = BPTR + 1. ;
+                                                BWT = BX(BPTR , 3) ;
+                                        END;
+                        END;
+        END;
+END;
+RUN;
+/*
+        -------------
+        MATCH SUMMARY
+        -------------
+*/
+PROC MEANS DATA=EXTRACT.MATCH N SUM MIN MAX;
+TITLE1 'Statistical Matching Project' ;
+TITLE2 'Final Matched File' ;
+TITLE3 'Host  is: 2007 SOI Public Use File' ;
+TITLE4 'Donor is: March 2008 CPS' ;
+RUN;
+/*
+        --------------------------------------
+        EVALUATION PHASE - LINK FILES
+        --------------------------------------
+*/
+DATA WORK.CPSFILE(KEEP=CPSSEQ Z1-Z50 P1-P50 WT);
+SET EXTRACT.CPSRETS2;
+ARRAY Z(*) Z1-Z50 ;
+ARRAY P(*) P1-P50 ;
+ARRAY ICPS(*) ICPS01-ICPS50;
+DO I = 1 TO 50 ;
+        Z(I) = ICPS(I) ;
+END;
+/*
+        Positive Values
+*/
+DO I = 1 TO 50 ;
+        P(I) = Z(I) ;
+        IF( P(I) = 0.0 )THEN P(I) = . ;
+END;
+/*
+        Labels
+*/
+LABEL
+Z1  = 'Age of Tax Unit Head'
+Z2  = 'Age of Tax Unit Spouse'
+Z3  = 'Age of Dependent #1'
+Z4  = 'Age of Dependent #2'
+Z5  = 'Age of Dependent #3'
+Z6  = 'Age of Dependent #4'
+Z7  = 'Age of Dependent #5'
+Z8  = 'Age of Youngest Child'
+Z9  = 'Age of Oldest Child'
+Z10 = 'HI: Covered (HEAD)'
+Z11 = 'HI: Employer-Provided (HEAD)'
+Z12 = 'HI: Employer Pays (HEAD)'
+Z13 = 'HI: Covered (SPOUSE)'
+Z14 = 'HI: Employer-Provided (SPOUSE)'
+Z15 = 'HI: Employer Pays (SPOUSE)'
+Z16 = 'Pension: Offered (HEAD)'
+Z17 = 'Pension: Included (HEAD)'
+Z18 = 'Pension: Offered (SPOUSE)'
+Z19 = 'Pension: Included (SPOUSE)'
+Z20 = 'Health Status (HEAD)'
+Z21 = 'Health Status (SPOUSE)'
+Z22 = 'Supplemental Security Income'
+Z23 = 'Public Assistance (TANF)'
+Z24 = 'Workmans Compensation'
+Z25 = 'Veterans Benefits'
+Z26 = 'Child Support'
+Z27 = 'Disability Income'
+Z28 = 'Social Security Income'
+Z29 = 'Home Ownership (TENURE)'
+Z30 = 'Wage Share (Lesser Earner)'
+Z31 = 'Energy Assistance'
+Z32 = 'Food Stamps'
+Z33 = 'School Lunches'
+Z34 = 'Medicare (Head)'
+Z35 = 'Medicaid (Head)'
+Z36 = 'Champus (Head)'
+Z37 = 'Country of Origin (Head)'
+Z38 = 'Medicare (Spouse)'
+Z39 = 'Medicaid (Spouse)'
+Z40 = 'Champus (Spouse)'
+Z41 = 'Country of Origin (Spouse)'
+P1  = 'Age of Tax Unit Head'
+P2  = 'Age of Tax Unit Spouse'
+P3  = 'Age of Dependent #1'
+P4  = 'Age of Dependent #2'
+P5  = 'Age of Dependent #3'
+P6  = 'Age of Dependent #4'
+P7  = 'Age of Dependent #5'
+P8  = 'Age of Youngest Child'
+P9  = 'Age of Oldest Child'
+P10 = 'HI: Covered (HEAD)'
+P11 = 'HI: Employer-Provided (HEAD)'
+P12 = 'HI: Employer Pays (HEAD)'
+P13 = 'HI: Covered (SPOUSE)'
+P14 = 'HI: Employer-Provided (SPOUSE)'
+P15 = 'HI: Employer Pays (SPOUSE)'
+P16 = 'Pension: Offered (HEAD)'
+P17 = 'Pension: Included (HEAD)'
+P18 = 'Pension: Offered (SPOUSE)'
+P19 = 'Pension: Included (SPOUSE)'
+P20 = 'Health Status (HEAD)'
+P21 = 'Health Status (SPOUSE)'
+P22 = 'Supplemental Security Income'
+P23 = 'Public Assistance (TANF)'
+P24 = 'Workmans Compensation'
+P25 = 'Veterans Benefits'
+P26 = 'Child Support'
+P27 = 'Disability Income'
+P28 = 'Social Security Income'
+P29 = 'Home Ownership (TENURE)'
+P30 = 'Wage Share (Lesser Earner)'
+P31 = 'Energy Assistance'
+P32 = 'Food Stamps'
+P33 = 'School Lunches'
+P34 = 'Medicare (Head)'
+P35 = 'Medicaid (Head)'
+P36 = 'Champus (Head)'
+P37 = 'Country of Origin (Head)'
+P38 = 'Medicare (Spouse)'
+P39 = 'Medicaid (Spouse)'
+P40 = 'Champus (Spouse)'
+P41 = 'Country of Origin (Spouse)'
+;
+RUN;
+/*
+        Prepare Files for Linking
+*/
+PROC SORT DATA=WORK.CPSFILE;BY CPSSEQ;
+PROC SORT DATA=EXTRACT.MATCH;BY CPSSEQ;
+/*
+        Create Analysis File
+*/
+DATA WORK.ANALYSIS;
+MERGE EXTRACT.MATCH(IN=M) WORK.CPSFILE(IN=D) ;
+BY CPSSEQ;
+IF(M);
+RUN;
+/*
+                Table 1. - Match Summary (Matched File)
+*/
+PROC MEANS DATA=WORK.ANALYSIS VARDEF=WEIGHT N SUMWGT MEAN STD;
+WEIGHT MATCHWEIGHT;
+VAR Z1-Z41 P1-P41 ;
+TITLE1 'Statistical Matching Project' ;
+TITLE2 'Evaluation Phase' ;
+TITLE3 'Table 1. - Match Summary (Matched File - Host is SOI)' ;
+TITLE4 '***** (Weighted) *****' ;
+RUN;
+/*
+                Table 2. - Match Summary (Donor File)
+*/
+PROC MEANS DATA=WORK.CPSFILE VARDEF=WEIGHT N SUMWGT MEAN STD;
+WEIGHT WT;
+VAR Z1-Z41 P1-P41 ;
+TITLE1 'Statistical Matching Project' ;
+TITLE2 'Evaluation Phase' ;
+TITLE3 'Table 2. - Match Summary (Donor File is CPS)' ;
+TITLE4 '***** (Weighted) *****' ;
+RUN;
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 6. Marge CPS and SOI data.   */
+%LET _CLIENTTASKLABEL='6. Marge CPS and SOI data.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+*OPTIONS PAGESIZE=84 LINESIZE=111; /* PORTRAIT  */
+OPTIONS COMPRESS=YES PAGESIZE=59 LINESIZE=160 CENTER ; /* LANDSCAPE */
+/*
+    =============================================
+			PricewaterhouseCoopers
+
+        STATISTICAL MATCHING PROJECT
+
+    March 2008 CPS  <-> 2007 Public Use File (SOI)
+
+
+
+    Program AssembleFile :Put together the 
+						  final Production File.
+
+					NOTE:	FILERS ONLY
+=================================================
+*/
+
+/*
+        --------------------------------------
+        CPS EXTRACT W/ ICPS() VARIABLES ONLY
+        --------------------------------------
+*/
+DATA WORK.CPSFILE(KEEP=CPSSEQ XHID XFID XPID XPIDS XPID01 XPID02 XPID03 XPID04 XPID05 XPID06 XPID07 XPID08 XPID09 XPID10 XPID11 XPID12 XPID13 XPID14 XPID15 AAGEDO AAGEDY /*ICPS01-ICPS50 NOTE: List CPS variables that I would like to carry over here. */);
+SET EXTRACT.CPSRETS2;
+RUN;
+/*
+        PREPARE THE FILES FOR LINKING
+*/
+PROC SORT DATA=WORK.CPSFILE;BY CPSSEQ;
+RUN;
+PROC SORT DATA=EXTRACT.MATCH;BY CPSSEQ;
+RUN;
+/*
+        CREATE THE WORK.ICPS() EXTRACT
+
+		NOTE: FILE WILL CONTAIN
+		      CPSSEQ
+              SOISEQ
+              MATCHWEIGHT (NEW WEIGHT FROM THE MATCH)
+*/
+DATA WORK.ICPS;
+MERGE EXTRACT.MATCH(IN=M) WORK.CPSFILE(IN=D) ;
+BY CPSSEQ;
+IF(M);
+RUN;
+/*
+                Table 1. - Match Summary (Matched File)
+*/
+PROC MEANS DATA=ICPS N MEAN STD MIN MAX;
+TITLE1 'Statistical Matching Project' ;
+TITLE2 'Evaluation Phase' ;
+TITLE3 'Table 1. - Match Summary (Matched File - Host is SOI)' ;
+TITLE4 '***** (Weighted) *****' ;
+RUN;
+/*
+                Table 2. - Match Summary (Donor File)
+*/
+PROC MEANS DATA=WORK.CPSFILE N MEAN STD MIN MAX;
+TITLE1 'Statistical Matching Project' ;
+TITLE2 'Evaluation Phase' ;
+TITLE3 'Table 2. - Match Summary (Donor File is CPS)' ;
+TITLE4 '***** (Weighted) *****' ;
+RUN;
+/*
+	==============================================
+	2007 SOI PUBLIC USE FILE
+	==============================================
+*/
+DATA WORK.SOIFILE;
+SET SOIDATA.PUF_2007 ; 
+***
+	FILER
+***;
+FILER = 1;
+/*
+	SET THE WORK.SOIFILE SEQUENCE NUMBER
+*/
+SOISEQ = _N_;
+RUN;
+/*
+	==============================================
+	CREATE THE NEW PRODUCTION FILE (FILERS ONLY)
+	==============================================
+*/
+PROC SORT DATA=WORK.SOIFILE;BY SOISEQ;
+RUN;
+PROC SORT DATA=WORK.ICPS;BY SOISEQ;
+RUN;
+DATA EXTRACT.SOIRETSCPSVARS;
+MERGE WORK.SOIFILE(IN=INB) WORK.ICPS(IN=INA);
+BY SOISEQ;
+IF( INA );
+***
+	NEW SEQUENCE NUMBER
+***;
+*PRODSEQ = _N_ ;
+***
+	NEW WEIGHT
+***;
+*MATCHWT = MATCHWEIGHT ;
+RUN;
+PROC MEANS DATA=EXTRACT.SOIRETSCPSVARS N MEAN MIN MAX SUM;
+TITLE1 'S T A T I S T I C A L   M A T C H I N G   P R O J E C T';
+TITLE2 '2007 SOI PUBLIC USE FILE: PRODUCTION VERSION 1';
+TITLE4 'Summary Statistics';
+RUN;
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 7. Add non-filers to the merged data.   */
+%LET _CLIENTTASKLABEL='7. Add non-filers to the merged data.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+%LET _SASPROGRAMFILE=;
+
+GOPTIONS ACCESSIBLE;
+*OPTIONS PAGESIZE=84 LINESIZE=111; /* PORTRAIT  */
+OPTIONS COMPRESS=YES PAGESIZE=59 LINESIZE=160 CENTER ; /* LANDSCAPE */
+/*
+    =======================================
+			PricewaterhouseCoopers
+
+        STATISTICAL MATCHING PROJECT
+
+    March 2008 CPS  <-> 2007 Public Use File (SOI)
+
+
+
+
+    Program NonFilers:Converts NonFiler Tax Units
+                      created from CPS-RETS 
+                      into "SOI"-like records.
+    =======================================
+*/
+
+DATA WORK.NONFILER(KEEP=FILER SOISEQ /*PRODSEQ*/ DSI FLPDYR FLPDMO MARS STATE XOCAH XOCAWH XOODEP XOPAR XTOT E00200 E00300 E00600 E00800 E00900 E01500 E02000 E02100 E02300 E02400 S006 MATCHWEIGHT  XHID XFID XPID XPIDS XPID01 XPID02 XPID03 XPID04 XPID05 XPID06 XPID07 XPID08 XPID09 XPID10 XPID11 XPID12 XPID13 XPID14 XPID15 AAGEDO AAGEDY /*NOTE: List CPS variables that I would like to carry over here.*/);
+SET  EXTRACT.CPSNONF;
+
+***
+	NONFILERS ONLY ON THIS FILE
+***;
+FILER = 0.;
+SOISEQ = 0 ;
+*PRODSEQ = 0 ;
+
+DSI	= IFDEPT;
+FLPDYR	=	2007;
+FLPDMO	=	12	;
+MARS	=	JS	;IF( MARS = 3 )THEN MARS = 4;	/*	HH has CODE = 4 FOR MARS	*/
+STATE	= XSTATE;
+XOCAH	= XXOCAH	;
+XOCAWH	= XXOCAWH;
+XOODEP	= XXOODEP;
+XOPAR	= XXOPAR	;
+XTOT	= XXTOT  ;
+
+E00200	=	WAS	;
+E00300	=	INTST	;
+E00600	=	DBE	;
+E00800	=	ALIMONY	;
+E00900	=	BIL	;
+E01500 = 	PENSIONS ;
+E02000	=	RENTS	;
+E02100	=	FIL	;
+E02300	=	UCOMP ;
+E02400	=	SOCSEC	;
+S006	=	WT	;
+
+MATCHWEIGHT = WT;
+RUN;
+PROC MEANS DATA=WORK.NONFILER N MIN MAX MEAN SUM ;
+TITLE1 'S t a t i s t i c a l  M a t c h i n g  P r o j e c t' ;
+TITLE5 'Table 1. - CPS Tax Units' ;
+TITLE6 'Source: March 2008 Current Population Survey' ;
+TITLE7 '(*** Unweighted ***)' ;
+TITLE8 'Non-Filers' ;
+TITLE9 '----------' ;
+RUN;
+**************************************************************************************;
+*****                        CREATE FINAL VERSION OF PRODUCTION FILE             *****;
+**************************************************************************************;
+DATA EXTRACT.SOIRETSCPSVARSOBS;
+SET EXTRACT.SOIRETSCPSVARS WORK.NONFILER;
+***
+	FINAL SEQUENCE NUMBER
+***;
+*FINALSEQ = _N_;
+RUN;
+
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+%LET _SASPROGRAMFILE=;
+
+
+/*   START OF NODE: 8. Merge in person-level data for head and spouse.   */
+%LET _CLIENTTASKLABEL='8. Merge in person-level data for head and spouse.';
+%LET _CLIENTPROJECTPATH='C:\Users\jhall\Desktop\OSPC\NovemberMatch\Project 5.egp';
+%LET _CLIENTPROJECTNAME='Project 5.egp';
+
+GOPTIONS ACCESSIBLE;
+%_eg_conditional_dropds(EXTRACT.SOICPSMATCH2007);
+
+PROC SQL;
+   CREATE TABLE EXTRACT.SOICPSMATCH2007(label="SOICPSMATCH2007") AS 
+   SELECT main.AGIR1, 
+          main.DSI, 
+          main.EFI, 
+          main.EIC, 
+          main.ELECT, 
+          main.FDED, 
+          main.FLPDYR, 
+          main.FLPDMO, 
+          main.F2441, 
+          main.F3800, 
+          main.F6251, 
+          main.F8582, 
+          main.F8606, 
+          main.IE, 
+          main.MARS, 
+          main.MIdR, 
+          main.N20, 
+          main.N24, 
+          main.N25, 
+          main.PREP, 
+          main.SCHB, 
+          main.SCHCF, 
+          main.SCHE, 
+          main.STATE, 
+          main.STIMIND, 
+          main.TFORM, 
+          main.TXST, 
+          main.XFPT, 
+          main.XFST, 
+          main.XOCAH, 
+          main.XOCAWH, 
+          main.XOODEP, 
+          main.XOPAR, 
+          main.XTOT, 
+          main.E00200, 
+          main.E00300, 
+          main.E00400, 
+          main.E00600, 
+          main.E00650, 
+          main.E00700, 
+          main.E00800, 
+          main.E00900, 
+          main.E01000, 
+          main.E01100, 
+          main.E01200, 
+          main.E01400, 
+          main.E01500, 
+          main.E01700, 
+          main.E02000, 
+          main.E02100, 
+          main.E02300, 
+          main.E02400, 
+          main.E02500, 
+          main.E03150, 
+          main.E03210, 
+          main.E03220, 
+          main.E03230, 
+          main.E03260, 
+          main.E03270, 
+          main.E03240, 
+          main.E03290, 
+          main.E03300, 
+          main.E03400, 
+          main.E03500, 
+          main.E00100, 
+          main.P04470, 
+          main.E04600, 
+          main.E04800, 
+          main.E05100, 
+          main.E05200, 
+          main.E05800, 
+          main.E06000, 
+          main.E06200, 
+          main.E06300, 
+          main.E09600, 
+          main.E07180, 
+          main.E07200, 
+          main.E07220, 
+          main.E07230, 
+          main.E07240, 
+          main.E07260, 
+          main.E07300, 
+          main.E07400, 
+          main.E07600, 
+          main.P08000, 
+          main.E07150, 
+          main.E06500, 
+          main.E08800, 
+          main.E09400, 
+          main.E09700, 
+          main.E09800, 
+          main.E09900, 
+          main.E10300, 
+          main.E10700, 
+          main.E10900, 
+          main.E59560, 
+          main.E59680, 
+          main.E59700, 
+          main.E59720, 
+          main.E11550, 
+          main.E11070, 
+          main.E11100, 
+          main.E11200, 
+          main.E11300, 
+          main.E11400, 
+          main.E10605, 
+          main.E11900, 
+          main.E12000, 
+          main.E12200, 
+          main.E17500, 
+          main.E18425, 
+          main.E18450, 
+          main.E18500, 
+          main.E19200, 
+          main.E19550, 
+          main.E19800, 
+          main.E19850, 
+          main.E20100, 
+          main.E19700, 
+          main.E20550, 
+          main.E20600, 
+          main.E20400, 
+          main.E20800, 
+          main.E20500, 
+          main.E21040, 
+          main.P22250, 
+          main.E22320, 
+          main.E22370, 
+          main.P23250, 
+          main.E24515, 
+          main.E24516, 
+          main.E24518, 
+          main.E24535, 
+          main.E24560, 
+          main.E24598, 
+          main.E24615, 
+          main.E24570, 
+          main.P25350, 
+          main.E25370, 
+          main.E25380, 
+          main.P25470, 
+          main.P25700, 
+          main.E25820, 
+          main.E25850, 
+          main.E25860, 
+          main.E25940, 
+          main.E25980, 
+          main.E25920, 
+          main.E25960, 
+          main.E26110, 
+          main.E26170, 
+          main.E26190, 
+          main.E26160, 
+          main.E26180, 
+          main.E26270, 
+          main.E26100, 
+          main.E26390, 
+          main.E26400, 
+          main.E27200, 
+          main.E30400, 
+          main.E30500, 
+          main.E32800, 
+          main.E33000, 
+          main.E53220, 
+          main.E53240, 
+          main.E53280, 
+          main.E53410, 
+          main.E58950, 
+          main.E58990, 
+          main.P60100, 
+          main.P61850, 
+          main.E60000, 
+          main.E62100, 
+          main.E62900, 
+          main.E62720, 
+          main.E62730, 
+          main.E62740, 
+          main.P65300, 
+          main.P65400, 
+          main.E68000, 
+          main.E82200, 
+          main.T27800, 
+          main.S27860, 
+          main.P27895, 
+          main.E87500, 
+          main.E87510, 
+          main.E87520, 
+          main.E87530, 
+          main.E87540, 
+          main.E87550, 
+          main.RECID, 
+          main.S006, 
+          main.S008, 
+          main.S009, 
+          main.WSAMP, 
+          main.TXRT, 
+          main.FILER, 
+          main.SOISEQ, 
+          main.CPSSEQ, 
+          main.MATCHWEIGHT, 
+          main.XHID, 
+          main.XFID, 
+          main.XPID, 
+          main.XPIDS, 
+          main.XPID01, 
+          main.XPID02, 
+          main.XPID03, 
+          main.XPID04, 
+          main.XPID05, 
+          main.XPID06, 
+          main.XPID07, 
+          main.XPID08, 
+          main.XPID09, 
+          main.XPID10, 
+          main.XPID11, 
+          main.XPID12, 
+          main.XPID13, 
+          main.XPID14, 
+          main.XPID15, 
+          main.AAGEDO, 
+          main.AAGEDY, 
+          head.HID, 
+          head.FID, 
+          head.PID, 
+          head.MARSUPWT, 
+          head.AEXPRRP, 
+          head.AAGE, 
+          head.AMARITL, 
+          head.ASPOUSE, 
+          head.ASEX, 
+          head.PSTAT, 
+          head.AHGA, 
+          head.PRDTRACE, 
+          head.PEHSPNON, 
+          head.AFAMNUM, 
+          head.AFAMTYP, 
+          head.AFAMREL, 
+          head.APFREL, 
+          head.HHDREL, 
+          head.FAMREL, 
+          head.HHDFMX, 
+          head.AENRLW, 
+          head.AHSCOL, 
+          head.AFTPT, 
+          head.WORKYN, 
+          head.WTEMP, 
+          head.NWLOOK, 
+          head.NWLKWK, 
+          head.RSNNOTW, 
+          head.WKSWORK, 
+          head.WKCHECK, 
+          head.LOSEWKS, 
+          head.LKNONE, 
+          head.LKWEEKS, 
+          head.LKSTRCH, 
+          head.PYRSN, 
+          head.PHMEMPRS, 
+          head.HRSWK, 
+          head.HRCHECK, 
+          head.PTYN, 
+          head.PTWEEKS, 
+          head.PTRSN, 
+          head.WSALVAL, 
+          head.SEMPVAL, 
+          head.FRSEVAL, 
+          head.UCVAL, 
+          head.SSVAL, 
+          head.RTMVAL, 
+          head.INTVAL, 
+          head.DIVVAL, 
+          head.RNTVAL, 
+          head.ALMVAL, 
+          head.WCVAL, 
+          head.PAWVAL, 
+          head.VETVAL, 
+          head.DSABVAL, 
+          head.CSPVAL, 
+          head.FINVAL, 
+          head.SSIVAL, 
+          head.PENPLAN, 
+          head.PENINCL, 
+          head.MCARE, 
+          head.MCAID, 
+          head.CHAMP, 
+          head.HIYN, 
+          head.HIOWN, 
+          head.HIEMP, 
+          head.HIPAID, 
+          head.COVGH, 
+          head.COVHI, 
+          head.CHMC, 
+          head.CHHI, 
+          head.PMVCARE, 
+          head.PMVCAID, 
+          head.EMCONTRB, 
+          spouse.HID AS HIDS, 
+          spouse.FID AS FIDS, 
+          spouse.PID AS PIDS, 
+          spouse.MARSUPWT AS MARSUPWTS, 
+          spouse.AEXPRRP AS AEXPRRPS, 
+          spouse.AAGE AS AAGES, 
+          spouse.AMARITL AS AMARITLS, 
+          spouse.ASPOUSE AS ASPOUSES, 
+          spouse.ASEX AS ASEXS, 
+          spouse.PSTAT AS PSTATS, 
+          spouse.AHGA AS AHGAS, 
+          spouse.PRDTRACE AS PRDTRACES, 
+          spouse.PEHSPNON AS PEHSPNONS, 
+          spouse.AFAMNUM AS AFAMNUMS, 
+          spouse.AFAMTYP AS AFAMTYPS, 
+          spouse.AFAMREL AS AFAMRELS, 
+          spouse.APFREL AS APFRELS, 
+          spouse.HHDREL AS HHDRELS, 
+          spouse.FAMREL AS FAMRELS, 
+          spouse.HHDFMX AS HHDFMXS, 
+          spouse.AENRLW AS AENRLWS, 
+          spouse.AHSCOL AS AHSCOLS, 
+          spouse.AFTPT AS AFTPTS, 
+          spouse.WORKYN AS WORKYNS, 
+          spouse.WTEMP AS WTEMPS, 
+          spouse.NWLOOK AS NWLOOKS, 
+          spouse.NWLKWK AS NWLKWKS, 
+          spouse.RSNNOTW AS RSNNOTWS, 
+          spouse.WKSWORK AS WKSWORKS, 
+          spouse.WKCHECK AS WKCHECKS, 
+          spouse.LOSEWKS AS LOSEWKSS, 
+          spouse.LKNONE AS LKNONES, 
+          spouse.LKWEEKS AS LKWEEKSS, 
+          spouse.LKSTRCH AS LKSTRCHS, 
+          spouse.PYRSN AS PYRSNS, 
+          spouse.PHMEMPRS AS PHMEMPRSS, 
+          spouse.HRSWK AS HRSWKS, 
+          spouse.HRCHECK AS HRCHECKS, 
+          spouse.PTYN AS PTYNS, 
+          spouse.PTWEEKS AS PTWEEKSS, 
+          spouse.PTRSN AS PTRSNS, 
+          spouse.WSALVAL AS WSALVALS, 
+          spouse.SEMPVAL AS SEMPVALS, 
+          spouse.FRSEVAL AS FRSEVALS, 
+          spouse.UCVAL AS UCVALS, 
+          spouse.SSVAL AS SSVALS, 
+          spouse.RTMVAL AS RTMVALS, 
+          spouse.INTVAL AS INTVALS, 
+          spouse.DIVVAL AS DIVVALS, 
+          spouse.RNTVAL AS RNTVALS, 
+          spouse.ALMVAL AS ALMVALS, 
+          spouse.WCVAL AS WCVALS, 
+          spouse.PAWVAL AS PAWVALS, 
+          spouse.VETVAL AS VETVALS, 
+          spouse.DSABVAL AS DSABVALS, 
+          spouse.CSPVAL AS CSPVALS, 
+          spouse.FINVAL AS FINVALS, 
+          spouse.SSIVAL AS SSIVALS, 
+          spouse.PENPLAN AS PENPLANS, 
+          spouse.PENINCL AS PENINCLS, 
+          spouse.MCARE AS MCARES, 
+          spouse.MCAID AS MCAIDS, 
+          spouse.CHAMP AS CHAMPS, 
+          spouse.HIYN AS HIYNS, 
+          spouse.HIOWN AS HIOWNS, 
+          spouse.HIEMP AS HIEMPS, 
+          spouse.HIPAID AS HIPAIDS, 
+          spouse.COVGH AS COVGHS, 
+          spouse.COVHI AS COVHIS, 
+          spouse.CHMC AS CHMCS, 
+          spouse.CHHI AS CHHIS, 
+          spouse.PMVCARE AS PMVCARES, 
+          spouse.PMVCAID AS PMVCAIDS, 
+          spouse.EMCONTRB AS EMCONTRBS
+      FROM EXTRACT.SOIRETSCPSVARSOBS main
+           LEFT JOIN EXTRACT.PERSON head ON (main.XHID = head.HID) AND (main.XPID = head.PID)
+           LEFT JOIN EXTRACT.PERSON spouse ON (main.XHID = spouse.HID) AND (main.XPIDS = spouse.PID)
+      ORDER BY main.FILER DESC,
+               main.SOISEQ,
+               main.CPSSEQ;
+QUIT;
+
+GOPTIONS NOACCESSIBLE;
+%LET _CLIENTTASKLABEL=;
+%LET _CLIENTPROJECTPATH=;
+%LET _CLIENTPROJECTNAME=;
+
+;*';*";*/;quit;run;
+ODS _ALL_ CLOSE;
